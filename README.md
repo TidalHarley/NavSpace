@@ -4,13 +4,10 @@
 The NavSpace dataset contains vision-and-language navigation data for 6 sub-tasks, totaling 1,228 episodes.
 
 ### Episode Count by Sub-task:
-- Environment State: 200
-- Space Structure: 200  
-- Precise Movement: 201
-- Viewpoint Shifting: 207
-- Vertical Perception: 208
-- Spatial Relationship: 212
-- **Total**: 1,228
+
+| Environment State | Space Structure | Precise Movement | Viewpoint Shifting | Vertical Perception | Spatial Relationship | Total |
+|------------------:|----------------:|-----------------:|-------------------:|--------------------:|---------------------:|------:|
+| 200               | 200             | 201              | 207                | 208                 | 212                  | **1,228** |
 
 ## Dataset File Structure
 Each subfolder contains three different JSON file formats:
