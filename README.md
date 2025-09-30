@@ -45,12 +45,7 @@ Each subfolder contains three different JSON file formats:
 2. Use `*_vln.json` as baseline for data comparison
 3. Choose appropriate data format based on model requirements
 
-## Quality Assurance
-- Data has been validated using comprehensive integrity checks
-- Viewpoint Shifting instruction inconsistencies have been resolved
-- All episode counts and correspondences verified across file types
-
 ## Evaluation Framework
-- Evaluation program is available as `gpt_eval.py`, which requires a GPT API key from the ChatAnywhere platform (https://chatanywhere.apifox.cn/).
+- Evaluation program is available as `gpt_eval.py`, which requires a GPT API key.
 - To run the evaluation process, execute the bash script `el.sh`
 - Additional evaluation methods will be released soon...
