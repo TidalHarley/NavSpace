@@ -1,6 +1,3 @@
-# NavSpace-How-Navigation-Agents-Follow-Spatial-Intelligence-Instructions
-Official codebase for NavSpace: How Navigation Agents Follow Spatial Intelligence Instructions
-
 # NavSpace Dataset
 
 ## Dataset Overview
@@ -43,7 +40,7 @@ Each subfolder contains three different JSON file formats:
 
 ## Data Consistency
 - All files maintain consistency in core fields: episode_id, instruction_text, coordinates, goal points, etc.
-- scene_id paths may vary due to different environments(different server), but scene filenames remain the same
+- scene_id paths may vary due to different environments, but scene filenames remain the same
 - Data integrity ensured through validation program
 
 ## Usage Recommendations
@@ -53,4 +50,10 @@ Each subfolder contains three different JSON file formats:
 
 ## Quality Assurance
 - Data has been validated using comprehensive integrity checks
+- Viewpoint Shifting instruction inconsistencies have been resolved
 - All episode counts and correspondences verified across file types
+
+## Evaluation Framework
+- Evaluation program is available as `gpt_eval.py`, which requires a GPT API key from the ChatAnywhere platform (https://chatanywhere.apifox.cn/).
+- To run the evaluation process, execute the bash script `el.sh`
+- Additional evaluation methods will be released soon...
