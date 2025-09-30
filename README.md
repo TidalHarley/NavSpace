@@ -1,4 +1,4 @@
-# NavSpace Dataset
+# NavSpace:  How Navigation Agents Follow Spatial Intelligence Instructions
 
 ## Dataset Overview
 The NavSpace dataset contains vision-and-language navigation data for 6 sub-tasks, totaling 1,228 episodes.
