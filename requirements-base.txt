@@ -1,0 +1,8 @@
+numpy
+opencv-python
+Pillow
+filelock
+
+# Install Habitat separately according to your platform/CUDA:
+# habitat-sim
+# habitat-lab

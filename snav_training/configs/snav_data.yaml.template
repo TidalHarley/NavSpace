@@ -1,0 +1,15 @@
+# LLaVA-Next/Video data config consumed by LLaVA's `train_mem.py` via `--data_path`.
+#
+# Copy this file to `snav_data.yaml` and fill in absolute paths that match
+# the `llava_annotations.json` files produced by the three
+# `data_generation/run_render_*.sh` wrappers.
+#
+# `sampling_strategy: all` = use every sample; switch to e.g. `random:0.5`
+# to use a random half.
+datasets:
+  - json_path: /abs/path/to/snav_data/r2rce/llava_annotations.json
+    sampling_strategy: all
+  - json_path: /abs/path/to/snav_data/rxrce/llava_annotations.json
+    sampling_strategy: all
+  - json_path: /abs/path/to/snav_data/envdrop/llava_annotations.json
+    sampling_strategy: all

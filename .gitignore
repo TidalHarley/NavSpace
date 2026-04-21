@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# NavSpace runtime artifacts — keep the repo reproducible, not bloated
+outputs/
+*.log
+habitat_debug.log
+trajectories.json
+assets/
+
+# Secrets — never commit
+.env
+.env.*
+*.pem
+credentials*.json
+key.json
+*_api_key*
+
+# Local model / dataset assets (too large to commit)
+/hm3d_v0.2/
+/mp3d/
+*.ckpt
+*.pt
+*.safetensors

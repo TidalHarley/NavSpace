@@ -1,0 +1,12 @@
+torch
+transformers
+decord
+numpy-quaternion
+tqdm
+omegaconf
+requests
+
+# Install project-specific external repos separately:
+# - LLaVA / SNav codebase
+# - StreamVLN codebase
+# - flash-attn (if required by your StreamVLN setup)

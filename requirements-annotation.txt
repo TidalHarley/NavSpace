@@ -1,0 +1,9 @@
+# Habitat-Sim must be installed separately via conda (see docs/annotation.md §3.1).
+Flask>=2.2,<4
+Flask-SocketIO>=5.3
+python-socketio>=5.9
+python-engineio>=4.8
+# eventlet is the recommended async mode for Flask-SocketIO; `threading` also works.
+eventlet>=0.33
+# Optional: enables the "Trigger LLM Analysis" button in the UI.
+openai>=1.30
