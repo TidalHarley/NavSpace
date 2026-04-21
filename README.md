@@ -2,6 +2,18 @@
 
 ![NavSpace overview](frontpage.png)
 
+## Paper & Project Website
+
+- **ArXiv (paper):** [NavSpace — How Navigation Agents Follow Spatial Intelligence Instructions](https://arxiv.org/abs/2510.08173)
+- **Project website:** [https://navspace.github.io/](https://navspace.github.io/)
+
+## Highlights
+
+- NavSpace is the **first benchmark** for evaluating spatial intelligence in embodied navigation
+- We manually collect 6 task categories and 1,228 trajectory-instruction pairs
+- We comprehensively evaluate 22 navigation agents
+- We propose a strong baseline model, **SNav**, validated on both NavSpace and real robot tests. **SNav** achieves **SoTA** in all validations.
+
 ---
 
 ## ✨ What is NavSpace?
@@ -17,8 +29,8 @@ paper:
 
 - 📊 **Benchmark data** — all six NavSpace subtasks.
 - 🧪 **Evaluation suite** — LLM API / SNav / StreamVLN routes with a unified result format.
-- ✏️ **Annotation pipeline** — Flask + Habitat-Sim web UI for collecting new trajectories, see `[docs/annotation.md](docs/annotation.md)`.
-- 🎓 **SNav training code (Stage-1 vanilla baseline)** — runnable end-to-end from Habitat rendering to DeepSpeed SFT, see `[docs/training.md](docs/training.md)`. This is a *baseline* release: Video-QA mixing, height / lighting perturbation and full data-augmentation flows are out of scope and left for users to layer on top.
+- ✏️ **Annotation pipeline** — Flask + Habitat-Sim web UI for collecting new trajectories, see [docs/annotation.md](docs/annotation.md).
+- 🎓 **SNav training code (Stage-1 vanilla baseline)** — runnable end-to-end from Habitat rendering to DeepSpeed SFT, see [docs/training.md](docs/training.md). This is a *baseline* release: Video-QA mixing, height / lighting perturbation and full data-augmentation flows are out of scope and left for users to layer on top.
 
 ### Qualitative visualizations
 
@@ -34,7 +46,7 @@ movement, viewpoint shifting, vertical perception, spatial relationship).
 
 Our SNav baseline is fine-tuned on top of Llava-Video-7b-Qwen2. The Stage-1 vanilla SFT recipe (Habitat rendering →  
 LLaVA-Video-7B-Qwen2 SFT via DeepSpeed) is open-sourced under  
-`[snav_training/](snav_training/)` — see the
+[snav_training/](snav_training/) — see the
 [training guide](docs/training.md). For the full paper recipe you additionally
 need Video-QA mixing (hook already exposed), height / lighting variation during
 rendering, and the Stage-2/3 data-augmentation pipelines, which are deliberately
@@ -47,11 +59,11 @@ out of scope here; the baseline is meant to be extended.
 
 | Module                                       | Folder                                         | Docs                                                                                                     |
 | -------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| 🧪 Evaluation (LLM + SNav + StreamVLN)       | `[evaluation/](evaluation/)`                   | [中文 `docs/evaluation.md](docs/evaluation.md)` · [English `docs/evaluation_en.md](docs/evaluation_en.md)` |
-| ✏️ Annotation pipeline (Flask + Habitat-Sim) | `[annotation_pipeline/](annotation_pipeline/)` | `[docs/annotation.md](docs/annotation.md)` *(中英双语: CN&EN Bilingual)*                                     |
-| 🎓 SNav training (Stage-1 vanilla baseline)  | `[snav_training/](snav_training/)`             | `[docs/training.md](docs/training.md)` *(中英双语: CN&EN Bilingual)*                                         |
-| 📦 Benchmark data                            | `[NavSpace-Datasets/](NavSpace-Datasets/)`     | built into `docs/evaluation.md`                                                                          |
-| 🧰 Utilities                                 | `[tools/](tools/)`                             | built into `docs/evaluation.md` §0, §6                                                                   |
+| 🧪 Evaluation (LLM + SNav + StreamVLN)       | [evaluation/](evaluation/)                      | [中文文档](docs/evaluation.md) · [English](docs/evaluation_en.md)                                           |
+| ✏️ Annotation pipeline (Flask + Habitat-Sim) | [annotation_pipeline/](annotation_pipeline/) | [docs/annotation.md](docs/annotation.md) *(中英双语: CN&EN Bilingual)*                                      |
+| 🎓 SNav training (Stage-1 vanilla baseline)  | [snav_training/](snav_training/)              | [docs/training.md](docs/training.md) *(中英双语: CN&EN Bilingual)*                                        |
+| 📦 Benchmark data                            | [NavSpace-Datasets/](NavSpace-Datasets/)       | built into [docs/evaluation.md](docs/evaluation.md)                                                      |
+| 🧰 Utilities                                 | [tools/](tools/)                              | built into [docs/evaluation.md](docs/evaluation.md) §0, §6                                                |
 
 
 Jump straight to a module:
