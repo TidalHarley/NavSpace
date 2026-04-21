@@ -1,5 +1,7 @@
 # [ICRA 2026] NavSpace: How Navigation Agents Follow Spatial Intelligence Instructions
 
+![NavSpace overview](frontpage.png)
+
 ---
 
 ## ✨ What is NavSpace?
@@ -24,7 +26,11 @@ The figure below shows typical agent rollouts on the six NavSpace subtasks — e
 is a different spatial-intelligence skill (environment state, space structure, precise
 movement, viewpoint shifting, vertical perception, spatial relationship).
 
+![Qualitative rollouts on the six NavSpace subtasks](visualization.png)
+
 ### SNav fine-tuning pipeline
+
+![SNav Stage-1 fine-tuning pipeline](snav-finetune.png)
 
 Our SNav baseline is fine-tuned on top of Llava-Video-7b-Qwen2. The Stage-1 vanilla SFT recipe (Habitat rendering →  
 LLaVA-Video-7B-Qwen2 SFT via DeepSpeed) is open-sourced under  
@@ -61,6 +67,9 @@ Jump straight to a module:
 
 ```text
 NavSpace-main/
+├── frontpage.png               # README hero figure
+├── visualization.png           # qualitative rollouts figure
+├── snav-finetune.png           # SNav pipeline figure
 ├── NavSpace-Datasets/          # benchmark data for the 6 subtasks
 ├── evaluation/                 # unified evaluation suite (LLM / SNav / StreamVLN)
 ├── annotation_pipeline/        # Flask + Habitat-Sim web UI for annotation
