@@ -187,4 +187,3 @@ Paper: [https://arxiv.org/abs/2510.08173](https://arxiv.org/abs/2510.08173)  · 
 If NavSpace is useful for your work, a **GitHub star** helps others discover the repo and keeps us motivated. If you use this benchmark or code in a paper or report, please **cite** the BibTeX entry above. Bug reports, feature ideas, and discussion are welcome—please open an **Issue** on GitHub so we can track and improve the project together.
 
 ---
-
