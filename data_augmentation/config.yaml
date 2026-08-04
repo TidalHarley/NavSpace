@@ -1,0 +1,57 @@
+# Paths are placeholders — override via env vars in the pipeline scripts
+# (R2RCE_TRAIN_JSON, SCENES_ROOT / MP3D_ROOT, DATA_ROOT) or edit locally.
+paths:
+  r2r_train: ${R2RCE_TRAIN_JSON}
+  mp3d_root: ${MP3D_ROOT}
+  output_root: data_augmentation/outputs
+
+habitat:
+  camera_height: 1.5
+  hfov: 120
+  width: 384
+  height: 384
+  forward_step: 0.25
+  turn_angle: 30
+  max_steps: 500
+  goal_radius: 0.5
+  gpu_device_id: 0
+
+qwen:
+  vision_model: qwen-vl-max
+  text_model: qwen-max
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  key_env: DASHSCOPE_API_KEY
+  max_retries: 5
+  initial_retry_delay: 2.0
+
+precise_movement:
+  min_geodesic: 3.0
+  max_geodesic: 15.0
+  max_height_diff: 0.3
+  min_turns: 2
+  max_episodes: 400
+
+environment_state:
+  min_geodesic: 3.0
+  max_geodesic: 25.0
+  max_episodes: 300
+  template_weights:
+    D_imperative_if: 0.40
+    C_pure_if: 0.15
+    B_from_if: 0.15
+    A_starting_if: 0.15
+    E_negative: 0.15
+
+vertical_perception:
+  min_height_diff: 1.5
+  min_stairs_frames: 3
+  max_episodes: 400
+  frame_stride: 5
+  max_frames: 12
+  styles:
+    - absolute
+    - relative
+    - fuzzy
+
+spatial_relationship:
+  max_episodes: 500

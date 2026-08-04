@@ -1,0 +1,20 @@
+# Stage A — navigation-only VLN-mix (no LLaVA-Video OE).
+# Same R2R / RxR-en / stop-dup / instruction-reconstruction recipe as the
+# paper Stage A YAML, minus the two open-ended QA JSONs.
+#
+# Produce these files with:
+#   bash snav_training/scripts/prepare_stage_a_data.sh
+#
+# Place JSONs under $TRAIN_DATA_ROOT (default: <repo>/train_data or
+# $NAVIGATION_ROOT/train_data). IMAGE_FOLDER should point at that same root.
+datasets:
+  - json_path: ../../train_data/r2r_stepwise_train_jupyter_full.json
+    sampling_strategy: all
+  - json_path: ../../train_data/r2r_stepwise_train_jupyter_full_stoponly.json
+    sampling_strategy: all
+  - json_path: ../../train_data/rxr_stepwise_train_jupyter_full_en.json
+    sampling_strategy: all
+  - json_path: ../../train_data/rxr_stepwise_train_jupyter_full_en_stoponly.json
+    sampling_strategy: all
+  - json_path: ../../train_data/r2r_rxr_instruction_from_fullobs_enmix_jupyter.json
+    sampling_strategy: all

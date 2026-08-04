@@ -18,12 +18,12 @@ result file format, which makes cross-method comparison straightforward.
 
 ## 0. Script inventory
 
-The tree below lists every evaluation-related file inside `NavSpace-main` with a short
+The tree below lists every evaluation-related file inside `NavSpace` with a short
 description. Entries marked `[ENTRY]` are CLI entry points that can be invoked via
 `python ... .py` directly.
 
 ```text
-NavSpace-main/
+NavSpace/
 ├── evaluation/                            # evaluation package
 │   ├── __init__.py                        # marks `evaluation/` as a Python package
 │   ├── config.py                          # task -> dataset map; LLM profile defaults; LlmEvalConfig dataclass
@@ -99,12 +99,13 @@ tools/smoke_test.py     ──► evaluation/* (offline self-check, does not dep
 > the top of the file, so both `python evaluation/run_llm_eval.py ...` and
 > `python -m evaluation.run_llm_eval ...` work. The former is recommended for clarity.
 
-### 0.3 Unified resolution
+### 0.3 Resolution
 
-All three routes now use a unified **224×224** image resolution — both for the Habitat
-renderer and for the `encode_resize` sent to the online API. If you want to experiment with
-336 or 384 locally, simply override the defaults on the command line, e.g.
-`--frame-width 336 --frame-height 336 --encode-resize 336`.
+- **LLM / StreamVLN**: default **224×224** (Habitat render + API `encode_resize`).
+- **SNav** (`evaluation/eval_snav.py`): default **384×384**, matching the paper training
+  chain; override with `--frame-width/--frame-height` if needed.
+- Habitat RGB **HFOV is fixed at 120°** in `create_simulator` (`evaluation/common.py`),
+  consistent with Stage A/B rendering.
 
 ### 0.4 Relation to VLN-CE / official R2R-CE instruction format
 
@@ -178,7 +179,7 @@ cd ..
 ### 1.5 Install NavSpace dependencies
 
 ```bash
-cd NavSpace-main
+cd NavSpace
 pip install -r requirements-base.txt
 # LLM route
 pip install -r requirements-llm.txt
@@ -432,23 +433,15 @@ The merge script re-orders episodes by dataset order and prints global SR/NE/OS/
 
 ### 3.1 Extra dependencies (not shipped here)
 
-- The LLaVA / SNav codebase (providing `llava.model.builder.load_pretrained_model` and friends). If you already keep StreamVLN locally, its bundled `StreamVLN/llava/` subtree is the same LLaVA code and can be reused directly.
-- Your SNav checkpoint directory (`--model-path`).
-- A compatible `torch` + `transformers` (already in `requirements-local-model.txt`).
-- Point HuggingFace cache to a writable directory:
+- A LLaVA codebase compatible with training (`llava.model.builder.load_pretrained_model`).
+  Reuse StreamVLN's bundled `llava/` or the LLaVA tree used for SNav training.
+- Your SNav checkpoint (`--model-path`) and a local **SigLIP**
+  (`--vision-tower-path`; recommended for offline eval).
+- Compatible `torch` + `transformers` (`requirements-local-model.txt`).
 
 ```bash
 export HF_HOME=/your/writable/hf_cache
-```
-
-Put the LLaVA code on `PYTHONPATH`, e.g.:
-
-```bash
-# Option A: a standalone LLaVA checkout
-export PYTHONPATH=/path/to/LLaVA:$PYTHONPATH
-
-# Option B (recommended, stays consistent with SNav training): reuse the one shipped with StreamVLN
-export PYTHONPATH=/path/to/StreamVLN:$PYTHONPATH
+export PYTHONPATH=/path/to/LLaVA-or-StreamVLN:$PYTHONPATH
 ```
 
 ### 3.2 Example
@@ -458,20 +451,26 @@ python evaluation/eval_snav.py \
   --task vertical_perception \
   --hm3d-base-path /path/to/hm3d_v0.2 \
   --model-path /path/to/your_snav_checkpoint \
+  --vision-tower-path /path/to/siglip-so400m-patch14-384 \
   --model-name llava_qwen \
   --conv-template qwen_1_5 \
+  --frame-width 384 --frame-height 384 \
   --max-frames-num 16 \
+  --future-steps-prompt 6 \
+  --actions-per-inference 4 \
   --max-steps 70 \
   --attn-implementation sdpa
 ```
 
 Common flags:
 
-- `--device` / `--device-map`: default `cuda` / `auto`.
-- `--frame-width` / `--frame-height`: default 224 (unified across all routes).
+- `--device` / `--device-map-gpu`: default `cuda:0` / `0`.
+- `--frame-width` / `--frame-height`: default **384** (train-aligned).
+- `--vision-tower-path`: local SigLIP path when the checkpoint does not embed the tower.
+- `--max-frames-num` / `--future-steps-prompt` / `--actions-per-inference`: defaults 16 / 6 / 4.
 - `--model-id` / `--num-shards`: same sharding convention as the LLM route.
 - `--resume-from`: resume from another result file.
-- `--attn-implementation`: `sdpa` (default, no flash-attn needed) / `flash_attention_2` (requires `flash-attn`) / `eager`.
+- `--attn-implementation`: `sdpa` (default, no flash-attn needed) / `flash_attention_2` / `eager`.
 
 ### 3.3 Output
 
@@ -577,7 +576,7 @@ packages in `requirements-base.txt`. It runs 16 ordered checks:
 6. `episode schema is consistent across tasks` — the first few episodes of every task carry `scene_id / start_position / start_rotation / goals / info / instruction`.
 7. `scene_id values are parseable for resolver` — `resolve_scene_path` can extract candidate names from each `scene_id`.
 8. `LLM profiles share the expected resolution` — every profile in `PROFILE_DEFAULTS` carries the expected `frame_width / frame_height / encode_resize` (default 224).
-9. `local-model CLIs use the expected resolution` — `eval_snav / eval_streamvln` default resolutions agree.
+9. `local-model CLIs use the expected resolution` — `eval_snav` defaults to 384; `eval_streamvln` to 224.
 10. `action extraction parses known verbs` — `extract_actions` correctly parses `Move forward / Turn left / ...`.
 11. `image pipeline end-to-end` — `ensure_size_bgr → encode_image_b64 → process_images_as_video` shapes and base64 outputs are correct.
 12. `metrics math matches expectations` — `summarize_results` produces the expected SR/OS/SPL on synthetic inputs.

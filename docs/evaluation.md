@@ -14,10 +14,10 @@
 
 ## 0. 脚本清单
 
-下面以目录树的方式列出 `NavSpace-main` 中与评测相关的每个文件和它的用途。带 `[ENTRY]` 标记的文件是可以直接 `python ... .py` 调用的 CLI 入口。
+下面以目录树的方式列出 `NavSpace` 中与评测相关的每个文件和它的用途。带 `[ENTRY]` 标记的文件是可以直接 `python ... .py` 调用的 CLI 入口。
 
 ```text
-NavSpace-main/
+NavSpace/
 ├── evaluation/                            # 评测主模块
 │   ├── __init__.py                        # 把 evaluation/ 注册为 Python 包
 │   ├── config.py                          # 任务 → 数据集映射；LLM Profile 默认值；LlmEvalConfig 数据类
@@ -89,9 +89,11 @@ tools/smoke_test.py     ──► evaluation/* （离线自检，不依赖 habit
 
 > **运行方式约定**：三个入口脚本已经在文件顶部加了 `sys.path` 兜底，因此既可以用 `python evaluation/run_llm_eval.py ...`，也可以用 `python -m evaluation.run_llm_eval ...`，推荐前者（更直观）。
 
-### 0.3 统一的分辨率约定
+### 0.3 分辨率约定
 
-所有评测路线现在统一使用 **224×224** 作为 Habitat 渲染分辨率与 API 请求时的 `encode_resize` 尺寸。如果你想在本地实验 336/384，只需要在命令行里传 `--frame-width 336 --frame-height 336 --encode-resize 336` 覆盖默认值即可；
+- **LLM / StreamVLN**：默认 **224×224**（Habitat 渲染与 API `encode_resize`）。
+- **SNav**（`evaluation/eval_snav.py`）：默认 **384×384**，与论文训练对齐；可用 `--frame-width/--frame-height` 覆盖。
+- Habitat RGB **HFOV 固定为 120°**（`evaluation/common.py` 的 `create_simulator`），与 Stage A/B 渲染一致。
 
 ### 0.4 与 VLN-CE / 官方 R2R-CE 指令格式的关系
 
@@ -153,7 +155,7 @@ cd ..
 ### 1.5 安装 NavSpace 依赖
 
 ```bash
-cd NavSpace-main
+cd NavSpace
 pip install -r requirements-base.txt
 # LLM 路线
 pip install -r requirements-llm.txt
@@ -396,23 +398,13 @@ python tools/merge_results.py \
 
 ### 3.1 额外依赖（本仓库不随附）
 
-- LLaVA / SNav 代码库（提供 `llava.model.builder.load_pretrained_model` 等入口）。如果你已经在用 StreamVLN 官方仓库，它的 `StreamVLN/llava/` 子目录就是同一套 LLaVA 代码，可以直接复用。
-- 你的 SNav 权重目录（`--model-path`）。
-- 合适的 `torch` + `transformers`（已在 `requirements-local-model.txt` 里）。
-- 推荐把 HuggingFace 缓存显式指向一个可写目录：
+- 与训练一致的 LLaVA 代码（提供 `llava.model.builder.load_pretrained_model`）。可复用 StreamVLN 自带的 `llava/`，或把 `snav_training` 训练所用的 LLaVA 树放进 `PYTHONPATH`。
+- SNav 权重目录（`--model-path`）与本地 **SigLIP**（`--vision-tower-path`，离线评测推荐显式指定）。
+- `torch` + `transformers`（见 `requirements-local-model.txt`）。
 
 ```bash
 export HF_HOME=/your/writable/hf_cache
-```
-
-把 LLaVA 代码路径加入 `PYTHONPATH`，例如：
-
-```bash
-# 情况 A：独立 LLaVA 代码库
-export PYTHONPATH=/path/to/LLaVA:$PYTHONPATH
-
-# 情况 B：复用 StreamVLN 附带的 LLaVA（推荐，和 SNav 训练保持一致）
-export PYTHONPATH=/path/to/StreamVLN:$PYTHONPATH
+export PYTHONPATH=/path/to/LLaVA-or-StreamVLN:$PYTHONPATH
 ```
 
 ### 3.2 运行示例
@@ -422,17 +414,23 @@ python evaluation/eval_snav.py \
   --task vertical_perception \
   --hm3d-base-path /path/to/hm3d_v0.2 \
   --model-path /path/to/your_snav_checkpoint \
+  --vision-tower-path /path/to/siglip-so400m-patch14-384 \
   --model-name llava_qwen \
   --conv-template qwen_1_5 \
+  --frame-width 384 --frame-height 384 \
   --max-frames-num 16 \
+  --future-steps-prompt 6 \
+  --actions-per-inference 4 \
   --max-steps 70 \
   --attn-implementation sdpa
 ```
 
 常用参数：
 
-- `--device` / `--device-map`：默认 `cuda` / `auto`。
-- `--frame-width` / `--frame-height`：默认 224。
+- `--device` / `--device-map-gpu`：默认 `cuda:0` / `0`。
+- `--frame-width` / `--frame-height`：默认 **384**（train-aligned）。
+- `--vision-tower-path`：本地 SigLIP 路径（checkpoint 未内嵌 vision tower 时必需）。
+- `--max-frames-num` / `--future-steps-prompt` / `--actions-per-inference`：默认 16 / 6 / 4。
 - `--model-id` / `--num-shards`：和 LLM 路线一致的分片切分。
 - `--resume-from`：复用另一份结果文件做断点续跑。
 
@@ -536,7 +534,7 @@ python tools/smoke_test.py
 6. `episode schema is consistent across tasks` —— 每个任务的前若干条 episode 都有 `scene_id/start_position/start_rotation/goals/info/instruction`。
 7. `scene_id values are parseable for resolver` —— `resolve_scene_path` 能从每条 `scene_id` 中提取候选名。
 8. `LLM profiles share the expected resolution` —— `PROFILE_DEFAULTS` 中每个 Profile 的 `frame_width/frame_height/encode_resize` 都是期望分辨率（默认 224）。
-9. `local-model CLIs use the expected resolution` —— `eval_snav/eval_streamvln` 的 CLI 默认分辨率一致。
+9. `local-model CLIs use the expected resolution` —— `eval_snav` 默认 384，`eval_streamvln` 默认 224。
 10. `action extraction parses known verbs` —— `extract_actions` 正确解析 `Move forward / Turn left / ...`。
 11. `image pipeline end-to-end` —— `ensure_size_bgr → encode_image_b64 → process_images_as_video` 整条图像链路的形状和 base64 输出都正确。
 12. `metrics math matches expectations` —— `summarize_results` 的 SR/OS/SPL 数值在构造数据上完全正确。

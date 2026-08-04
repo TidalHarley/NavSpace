@@ -1,0 +1,5 @@
+# Stage B (paper SNav-7B final) data recipe.
+# Build with: python snav_training/scripts/build_hist8_future6.py ...
+datasets:
+  - json_path: ../../train_data/navspace_aug_mix_plus_manual98_hist8_future6.json
+    sampling_strategy: all

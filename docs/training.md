@@ -5,26 +5,26 @@
 > - [中文版](#中文版)
 > - [English version](#english-version)
 
+> ⚠️ **Paper chain (recommended):** Stage A VLN-mix → Stage B aug_mix(+manual98) lives in
+> [`snav_training/README.md`](../snav_training/README.md)
+> (`prepare_stage_a_data.sh`, `launch_vln_mix_stage_a.sh`, `launch_paper_sft_stage_b.sh`).
+> **This page only documents the older Stage-1 baseline** (`train_snav.py` +
+> `data_generation/` renderers). Camera for baseline/paper renders is **1.5 m / 30° / HFOV 120°**.
+
 ---
 
 ## 中文版
 
-`snav_training/` 现在已经包含一套**可以跑起来**的 SNav Stage-1 vanilla SFT 训练管线。
-使用者拿到仓库后按 README 配好路径就能直接从 LLaVA-Video-7B-Qwen2 出发跑 SNav 的
-Stage-1 监督微调。
+`snav_training/` 另有一套 **Stage-1 baseline**（`train_snav.py`）SFT 管线，便于消融与冒烟。
+论文权重链请以 [`snav_training/README.md`](../snav_training/README.md) 为准。
 
-> ⚠️ **重要提示：这只是 Stage-1 baseline。** 仓库里开源的训练脚本仅负责：
-> 用 Habitat `GreedyGeodesicFollower` 渲染的专家轨迹 → LLaVA-Video-7B-Qwen2 SFT。
+> ⚠️ **以下内容仅针对 Stage-1 baseline**（`GreedyGeodesicFollower` 渲染 → `train_snav.py`）。
 >
-> 要复现论文中的完整 SNav 训练效果，还需要以下**本仓库不包含**的东西：
+> 相对论文链，baseline 额外注意：
 >
-> 1. **通用 Video-QA 数据（mandatory for best results）** —— 与导航数据按 ~15 %
->   的比例混训，缓解灾难性遗忘，保留 LLaVA-Video 原有的视觉问答能力。脚本层面
->    已经支持 (`QA_JSON_PATHS` / `QA_VIDEO_ROOTS`)，但我们并不分发 QA 数据本身。
-> 2. **高度 / 光影扰动**（height & lighting variation） —— 渲染期间随机扰动
->   相机高度和场景光照，用于提升模型对 embodiment 和外观变化的鲁棒性。当前
->    渲染脚本只使用固定相机高度（0.88 m）+ 默认 Habitat 光照。
-> 3. **Data augmentation** —— 基于 LLM 的指令改写的data augmentation流程。
+> 1. **通用 Video-QA 混训（可选）** —— 脚本支持 `QA_JSON_PATHS` / `QA_VIDEO_ROOTS`，数据不随仓库分发。
+> 2. **渲染** —— 见 `data_generation/`（1.5 m / 30° / 120°），不是 Stage A 的 `stage_a/` collect。
+> 3. **Data augmentation / Stage B** —— 见 [`data_augmentation/`](../data_augmentation/) 与论文链 README。
 
 ### 目录结构
 
@@ -147,27 +147,16 @@ python evaluation/eval_snav.py \
 
 ## English version
 
-`snav_training/` now ships a **runnable** SNav Stage-1 vanilla SFT pipeline. After
-filling in the paths documented in the README you can kick off Stage-1 supervised
-fine-tuning of `LLaVA-Video-7B-Qwen2` on SNav data out of the box.
+`snav_training/` also ships a **Stage-1 baseline** (`train_snav.py`) for ablations.
+For the **paper weight chain**, follow [`snav_training/README.md`](../snav_training/README.md).
 
-> ⚠️ **Important: this is a Stage-1 baseline only.** The open-sourced training
-> script covers exactly one thing: geodesic-follower expert trajectories rendered
-> by Habitat-Sim → LLaVA-Video-7B-Qwen2 SFT.
+> ⚠️ **This section covers the Stage-1 baseline only** (geodesic-follower render →
+> `train_snav.py`). Relative to the paper chain:
 >
-> To reproduce the full SNav recipe from the paper you **also** need the
-> following, none of which are shipped here:
->
-> 1. **General Video-QA data** (strongly recommended) — mixed in at ~15 % to
->   mitigate catastrophic forgetting and preserve the base model's video
->    reasoning capability. The trainer already supports this via
->    `QA_JSON_PATHS` / `QA_VIDEO_ROOTS`, but we do not redistribute the QA
->    corpus itself (use LLaVA-Video-178K or any equivalent).
-> 2. **Height & lighting variation** during rendering — jitter the camera
->   height and scene illumination to improve robustness to embodiment /
->    appearance changes. The current renderer uses a fixed camera height
->    (0.88 m) and Habitat's default lighting.
-> 3. **Data augmentation** — LLM-based instruction rewriting.
+> 1. **Optional Video-QA mixing** via `QA_JSON_PATHS` / `QA_VIDEO_ROOTS` (data not shipped).
+> 2. **Rendering** — `data_generation/` at **1.5 m / 30° / HFOV 120°**, not `stage_a/` collect.
+> 3. **Augmentation / Stage B** — see [`data_augmentation/`](../data_augmentation/) and the
+>    paper-chain README.
 
 ### Layout
 

@@ -35,6 +35,12 @@ outputs/
 habitat_debug.log
 trajectories.json
 assets/
+data_augmentation/outputs/
+snav_training/logs/
+snav_data/
+train_data/
+checkpoints/
+work_dirs/
 
 # Secrets — never commit
 .env
@@ -50,3 +56,5 @@ key.json
 *.ckpt
 *.pt
 *.safetensors
+*.bin
+*.gguf

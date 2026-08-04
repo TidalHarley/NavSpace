@@ -1,121 +1,124 @@
-# Data generation
+# Stage-1 数据渲染（baseline，不是论文 Stage A）
 
-This folder turns raw VLN-CE / RxR-CE / EnvDrop episode files into the
-**SNav-style training format** consumed by `scripts/run_snav_train.sh`.
+这里负责把 R2R-CE、RxR-CE 和 EnvDrop 的 episode JSON 渲染成 **baseline**
+`train_snav.py` 用的帧数据（`GreedyGeodesicFollower`）。
 
-For every episode we let Habitat-Sim's `GreedyGeodesicFollower` follow the
-shortest path to the goal, dumping (by default, `--output_mode frames` — the
-StreamVLN-compatible layout consumed by `train_snav.py`):
+论文 Stage A 的 collect/build 在 [`../stage_a/`](../stage_a/) 与
+`scripts/prepare_stage_a_data.sh`，不要用本目录替代。
 
-- `images/<scan>_<tag>_<id>/rgb/<step>.jpg` — one RGB frame per navigation
-step (384×384, FOV 120°).
-- `annotations.json` — one entry **per episode**, with the instruction(s)
-and the full ground-truth action list.
+## 1. 如何开始
 
-An alternative `--output_mode snav_frames` is available if you want the
-LLaVA-SFT style `llava_annotations.json` (one sample per step) instead. It's
-there for compatibility with external LLaVA training pipelines and is NOT
-needed for the in-repo trainer.
-
-Only HM3D **or** MP3D scenes are needed. The renderer picks whichever
-directory layout you point `--scenes_root` at.
-
-> This pipeline only produces the vanilla SNav Stage-1 training data
-> (expert trajectories rendered with the geodesic follower). It does **not**
-> cover any data-augmentation flows (instruction rewriting, panorama
-> augmentation, etc.) — those are deliberately out of scope here.
-
-## Layout
-
-```
-snav_training/data_generation/
-├── README.md                      (this file)
-├── render_streamvln.py            Python renderer (R2R-CE / RxR-CE / EnvDrop)
-├── run_render_r2rce.sh            R2R-CE train split (bash wrapper)
-├── run_render_rxrce.sh            RxR-CE train split
-└── run_render_envdrop.sh          EnvDrop subset
-```
-
-Output tree after running all three wrappers (default `frames` mode):
-
-```
-${DATA_ROOT}/                      (defaults to ./snav_data)
-├── r2rce/
-│   ├── annotations.json
-│   └── images/<scan>_r2r_<id>/rgb/*.jpg
-├── rxrce/
-│   ├── annotations.json
-│   └── images/<scan>_rxr_<id>/rgb/*.jpg
-└── envdrop/
-    ├── annotations.json
-    └── images/<scan>_envdrop_<id>/rgb/*.jpg
-```
-
-Pass these three directory paths as `VIDEO_FOLDERS=...` when launching
-`scripts/run_snav_train.sh`.
-
-## Prerequisites
-
-- `habitat-sim ≥ 0.3.3` (tested with 0.3.3 inside the `streamvln` conda env).
-- Scene assets under `${SCENES_ROOT}`:
-  - HM3D: `${SCENES_ROOT}/hm3d_v0.2/{train,val,test}/<scene>/<scene>.basis.glb`
-  - MP3D: `${SCENES_ROOT}/mp3d/<scene>/<scene>.glb`
-  - The renderer falls back on either layout automatically.
-- Episode JSONs (NOT shipped here — grab from the official releases):
-  - R2R-CE: `R2R_VLNCE_v1-3_preprocessed/train/train.json.gz`
-  - RxR-CE: `RxR_VLNCE_v0/train/train_guide.json`
-  - EnvDrop: `R2R_VLNCE_v1-3_preprocessed/envdrop/envdrop.json.gz`
-
-## Quick start
+先进入有 `habitat-sim` 的环境：
 
 ```bash
-# 1. Activate the env that has habitat-sim installed.
-conda activate streamvln
+conda activate your_virtual_env
+```
 
-# 2. Point environment variables at your local paths (see each script for
-#    the full list; the defaults below are what you typically need).
-export DATA_ROOT=/abs/path/to/snav_data
-export SCENES_ROOT=/abs/path/to/scene_datasets
-export R2RCE_TRAIN_JSON=/abs/path/to/train.json.gz
-export RXRCE_TRAIN_JSON=/abs/path/to/train_guide.json
-export ENVDROP_SOURCE_JSON=/abs/path/to/envdrop.json.gz
+然后进到渲染目录，并把本地路径配好：
 
-# 3. Render (run them one at a time, each uses ≈40–60 GB of disk).
+```bash
+cd snav_training/data_generation
+
+export DATA_ROOT=/abs/path/to/snav_data      # 输出根目录，默认 ./snav_data
+export SCENES_ROOT=/abs/path/to/scene_datasets  # HM3D 和/或 MP3D 场景根目录
+
+export R2RCE_TRAIN_JSON=/abs/path/to/R2R_VLNCE_v1-3_preprocessed/train/train.json.gz
+export RXRCE_TRAIN_JSON=/abs/path/to/RxR_VLNCE_v0/train/train_guide.json
+export ENVDROP_SOURCE_JSON=/abs/path/to/R2R_VLNCE_v1-3_preprocessed/envdrop/envdrop.json.gz
+```
+
+三个数据集分别渲染，建议一个一个跑。日志会写到 `${DATA_ROOT}/*_render.log`：
+
+```bash
 bash run_render_r2rce.sh
 bash run_render_rxrce.sh
 bash run_render_envdrop.sh
 ```
 
-### Common flags
-
-All three wrappers forward unknown arguments to `render_streamvln.py`, so you
-can pass e.g. `--max_episodes 20` for a quick smoke test:
+第一次跑可以先做个小测试：
 
 ```bash
-bash run_render_r2rce.sh --max_episodes 20
+bash run_render_r2rce.sh --max_episodes 5
 ```
 
-The renderer's own CLI exposes (non-exhaustive list):
+渲染完成后，训练脚本需要知道这几个数据目录：
 
+```bash
+export VIDEO_FOLDERS="${DATA_ROOT}/r2rce,${DATA_ROOT}/rxrce,${DATA_ROOT}/envdrop"
+```
 
-| Flag                         | Default  | Meaning                                                       |
-| ---------------------------- | -------- | ------------------------------------------------------------- |
-| `--width / --height`         | 384      | Rendered RGB resolution                                       |
-| `--hfov`                     | 120      | Camera horizontal FOV (SNav convention)                       |
-| `--camera_height`            | 0.88     | Camera height in metres                                       |
-| `--forward_step`             | 0.25     | Forward step size in metres                                   |
-| `--turn_angle`               | 15.0     | Turn angle in degrees                                         |
-| `--max_steps`                | 500      | Episode length cap                                            |
-| `--goal_radius`              | 0.5      | Success radius in metres                                      |
-| `--output_mode`              | `frames` | `frames` (StreamVLN style, default) / `video` / `snav_frames` |
-| `--custom_instructions_json` | —        | Overwrite episode instructions (EnvDrop uses this)            |
-| `--lang_filter`              | —        | Keep only a subset of languages (RxR-CE typically `en`)       |
+---
 
+## 2. 渲染产物说明
 
-## Notes
+默认输出是 `frames` 模式，三个 wrapper 都是这个设置。训练时真正读取的是 **`annotations.json`**，不是 `llava_annotations.json`。
 
-- The renderer is deterministic given the same episode JSON + seed; if you  
-re-run it only episodes missing from disk will be rendered.
-- `render_streamvln.py` has no dependencies beyond `habitat-sim`,
-`opencv-python`, `Pillow`, and `tqdm`.
+```
+${DATA_ROOT}/
+├── r2rce/
+│   ├── annotations.json
+│   └── images/<scan>_r2r_<episode_id>/rgb/001.jpg ...
+├── rxrce/
+│   ├── annotations.json
+│   └── images/<scan>_rxr_<episode_id>/rgb/...
+└── envdrop/
+    ├── annotations.json
+    └── images/<scan>_envdrop_<episode_id>/rgb/...
+```
 
+`annotations.json` 里的一条记录对应一个 episode，里面有 instruction 列表和完整的 GT action 序列。对应的 RGB 帧放在 `images/.../rgb/` 下，按 step 编号。
+
+下面这些渲染参数已经在 wrapper 里固定住了，目的是让训练视角和评测视角一致。一般不要改，除非你也同步改评测设置。
+
+| 项 | 值 |
+|----|-----|
+| 分辨率 | 384×384 |
+| 水平 FOV | 120° |
+| 相机高度 | 1.5 m |
+| 前进步长 | 0.25 m |
+| 转向角 | **30°** |
+| R2R / EnvDrop `max_steps` | 500 |
+| RxR `max_steps` | 800 |
+
+三个 wrapper 的输入略有不同：
+
+| 脚本 | 输入 | 说明 |
+|------|------|------|
+| `run_render_r2rce.sh` | `R2RCE_TRAIN_JSON` | R2R-CE train |
+| `run_render_rxrce.sh` | `RXRCE_TRAIN_JSON` | RxR-CE train_guide，默认 `LANG_FILTER=en` |
+| `run_render_envdrop.sh` | `ENVDROP_SOURCE_JSON` | 先从全量 **随机抽 20000** 条（`SAMPLE_COUNT` / `SAMPLE_SEED`），再渲染 |
+
+全量渲染会比较占空间，三套数据加起来通常是数百 GB 级，具体取决于 episode 数量和轨迹长度。
+
+---
+
+## 3. 必要补充
+
+`SCENES_ROOT` 下需要能找到 HM3D 或 MP3D 场景。两种格式都支持，渲染器会自己匹配：
+
+- HM3D：`hm3d_v0.2/{train,val,test}/<scene>/<scene>.basis.glb`
+- MP3D：`mp3d/<scene>/<scene>.glb`
+
+渲染支持断点续跑。已经写进 `annotations.json` 的 episode 会被跳过；如果想强制重渲某条，删掉对应的 `images/...` 目录和 annotation 记录再跑。
+
+wrapper 里已经处理了 NVIDIA EGL 相关环境变量。正常情况下用 GPU 渲染即可；如果机器没有可用 GPU，可以设 `GPU_DEVICE_ID=-1` 走 CPU/Mesa，但会非常慢。
+
+如果想在渲染阶段做几何随机化，可以打开下面这些环境变量。默认都是关闭的。
+
+```bash
+export CAMERA_HEIGHT_JITTER=0.15
+export HFOV_JITTER=15
+export RESOLUTION_CHOICES="256,320,384"
+export NUM_RENDER_VARIANTS=2   # K>1 时目录名带 _v1, _v2 ...
+bash run_render_r2rce.sh
+```
+
+这里的随机化只改相机高度、FOV、分辨率这类几何因素。亮度、模糊、噪声等外观增强不在这里做，而是在训练时通过 `AUGMENT=1` 开启。
+
+本仓库训练不需要其他输出模式。如果要给外部 LLaVA SFT 流程用，可以看 `render_streamvln.py --output_mode video|snav_frames`，这两种模式会写 `llava_annotations.json`。
+
+也可以绕过 wrapper 直接调 Python，参数以 `render_streamvln.py --help` 为准：
+
+```bash
+python render_streamvln.py --data_json ... --scenes_root ... --output_dir ... --output_mode frames
+```

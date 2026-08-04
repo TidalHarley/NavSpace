@@ -16,7 +16,7 @@
 ### 1. 目录结构
 
 ```text
-NavSpace-main/
+NavSpace/
 ├── run_annotation_server.sh             # 从任意路径启动（内部 cd 到仓库根目录）
 └── annotation_pipeline/
     ├── __init__.py
@@ -52,7 +52,7 @@ conda install -c aihabitat -c conda-forge habitat-sim=0.2.5 withbullet headless 
 #### 3.2 安装前后端依赖
 
 ```bash
-cd NavSpace-main
+cd NavSpace
 pip install -r requirements-base.txt        # numpy / opencv / pillow ...
 pip install -r requirements-annotation.txt  # Flask / Flask-SocketIO / openai (LLM 辅助按钮)
 ```
@@ -113,21 +113,21 @@ python annotation_pipeline/websocket_annotation_server.py
 
 #### 3.5 启动服务
 
-**工作目录**：必须在 **本仓库根目录** `NavSpace-main` 下启动，否则会出现  
+**工作目录**：必须在 **本仓库根目录** `NavSpace` 下启动，否则会出现  
 `can't open file '.../annotation_pipeline/websocket_annotation_server.py'`（你在其它目录执行了相对路径）。
 
 推荐任选其一：
 
 ```bash
 # 方式 A：先 cd 再运行（最常见）
-cd /path/to/NavSpace-main
+cd /path/to/NavSpace
 python annotation_pipeline/websocket_annotation_server.py
 
 # 方式 B：从任意目录用绝对路径调用 Python（不依赖当前目录）
-python /path/to/NavSpace-main/annotation_pipeline/websocket_annotation_server.py
+python /path/to/NavSpace/annotation_pipeline/websocket_annotation_server.py
 
-# 方式 C：使用仓库自带的启动脚本（内部会 cd 到 NavSpace-main）
-bash /path/to/NavSpace-main/run_annotation_server.sh
+# 方式 C：使用仓库自带的启动脚本（内部会 cd 到 NavSpace）
+bash /path/to/NavSpace/run_annotation_server.sh
 ```
 
 控制台会输出：
@@ -190,7 +190,7 @@ bash /path/to/NavSpace-main/run_annotation_server.sh
 
 | 现象                                                                        | 原因 / 处理                                                                                                                                                                                                           |
 | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `can't open file '...annotation_pipeline/websocket_annotation_server.py'` | 当前目录不是 `NavSpace-main`。请先 `cd` 到仓库根目录，或使用 **绝对路径** 调用 `python`，或运行 `bash run_annotation_server.sh`                                                                                                                |
+| `can't open file '...annotation_pipeline/websocket_annotation_server.py'` | 当前目录不是 `NavSpace`。请先 `cd` 到仓库根目录，或使用 **绝对路径** 调用 `python`，或运行 `bash run_annotation_server.sh`                                                                                                                |
 | 后端报错 `No scene paths available to initialize simulator`                   | **没有任何 .glb 被扫描到**。请确认已下载 HM3D 或 MP3D，并设置 `NAVSPACE_HM3D_BASE_PATH` 或 `NAVSPACE_MP3D_ROOT` 指向正确根目录；或先用 `**export NAVSPACE_SCENE_PATHS=/绝对路径/某个场景.glb`** 指定单个文件验证。MP3D 常见路径形如 `.../mp3d/<scene_id>/<scene_id>.glb` |
 | 启动时报 *未找到任何有效的 HM3D 场景文件*                                                 | `NAVSPACE_HM3D_BASE_PATH` 指错了，或 HM3D 没有解压在 `train/val/test` 三个子目录                                                                                                                                                 |
 | 浏览器能打开页面但画面不刷新                                                            | 检查是否被反向代理挡住了 WebSocket；前端 `io(..., { transports: ['websocket', 'polling'] })` 可自动回落                                                                                                                               |
@@ -210,7 +210,7 @@ bash /path/to/NavSpace-main/run_annotation_server.sh
 ### 1. Layout
 
 ```text
-NavSpace-main/
+NavSpace/
 ├── run_annotation_server.sh             # launcher: cds to repo root then starts Python
 └── annotation_pipeline/
     ├── __init__.py
@@ -246,7 +246,7 @@ conda install -c aihabitat -c conda-forge habitat-sim=0.2.5 withbullet headless 
 #### 3.2 Install web deps
 
 ```bash
-cd NavSpace-main
+cd NavSpace
 pip install -r requirements-base.txt
 pip install -r requirements-annotation.txt   # Flask / Flask-SocketIO / openai (LLM helper)
 ```
@@ -298,21 +298,21 @@ If `NAVSPACE_MP3D_ROOT` is set but no `.glb` files are found, the server **falls
 
 #### 3.5 Launch
 
-**Working directory**: you must start the server from the `**NavSpace-main` repository root**. Otherwise Python raises  
+**Working directory**: you must start the server from the `**NavSpace` repository root**. Otherwise Python raises  
 `can't open file '.../annotation_pipeline/websocket_annotation_server.py'` (you used a relative path from the wrong folder).
 
 Pick one:
 
 ```bash
 # A: cd first (most common)
-cd /path/to/NavSpace-main
+cd /path/to/NavSpace
 python annotation_pipeline/websocket_annotation_server.py
 
 # B: absolute path to the script (works from any cwd)
-python /path/to/NavSpace-main/annotation_pipeline/websocket_annotation_server.py
+python /path/to/NavSpace/annotation_pipeline/websocket_annotation_server.py
 
-# C: bundled launcher (cd's into NavSpace-main for you)
-bash /path/to/NavSpace-main/run_annotation_server.sh
+# C: bundled launcher (cd's into NavSpace for you)
+bash /path/to/NavSpace/run_annotation_server.sh
 ```
 
 You should see:
@@ -375,7 +375,7 @@ Every submitted episode is appended to `trajectories.json` under the shape consu
 
 | Symptom                                                                   | Cause / fix                                                                                                                                                                                   |
 | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `can't open file '...annotation_pipeline/websocket_annotation_server.py'` | Current directory is not `NavSpace-main`. `cd` into the repo root, call `python` with an **absolute** path, or run `bash run_annotation_server.sh`                                            |
+| `can't open file '...annotation_pipeline/websocket_annotation_server.py'` | Current directory is not `NavSpace`. `cd` into the repo root, call `python` with an **absolute** path, or run `bash run_annotation_server.sh`                                            |
 | `No scene paths available to initialize simulator`                        | No `.glb` files were discovered. Set `NAVSPACE_HM3D_BASE_PATH` or `NAVSPACE_MP3D_ROOT` to a valid dataset root, or set `**NAVSPACE_SCENE_PATHS=/abs/path/to/one_scene.glb`** for a quick test |
 | *No valid HM3D scene files found at startup*                              | `NAVSPACE_HM3D_BASE_PATH` points to the wrong directory or HM3D is not split into `train/val/test`                                                                                            |
 | Page opens but frame never updates                                        | A reverse proxy is blocking WebSocket; the client falls back to long-polling via `io(..., { transports: ['websocket', 'polling'] })`                                                          |

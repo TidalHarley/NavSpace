@@ -19,17 +19,48 @@ Three output modes (--output_mode):
   snav_frames  (SNav-compatible, per-step JPGs — O(N) storage):
     {output_dir}/{scan}_{tag}_{id}/000.jpg, 001.jpg ...
     {output_dir}/llava_annotations.json   (with video_nframes field)
+
+Optional domain randomization for Stage-1 training:
+
+  --camera_height_jitter Δ       per-episode camera_height ~ U(base-Δ, base+Δ)
+  --hfov_jitter         Δ        per-episode hfov          ~ U(base-Δ, base+Δ)
+  --resolution_choices "256,..." per-episode square resolution sampled from list
+                                  (overrides --width/--height when non-empty)
+  --num_render_variants K        render each episode K times with independent
+                                  random params (K=1 = single randomized render)
+  --randomize_seed      S        deterministic seed for the per-episode sampler
+
+When any of the jitter / resolution / variants options are active the simulator
+is rebuilt per (episode, variant) pair so that the new sensor spec takes effect.
+With the default values this file is byte-for-byte equivalent to the original
+vanilla renderer.
+
+The default base values for camera_height (1.5 m), hfov (120°), turn_angle
+(30°) and resolution (384×384) are picked to match the NavSpace evaluation
+simulator (``evaluation/common.py::create_simulator``); divergence here
+would cause the model's `←` / `→` actions to under-/over-rotate at
+inference time relative to what it saw during training, or shrink/expand
+the effective field-of-view.
 """
+
+# PEP 563 — defer all annotation evaluation. This lets unit tests import the
+# pure-Python helpers (sample_render_params, etc.) without needing the real
+# habitat_sim installed (the type annotations referencing habitat_sim.Simulator
+# stay as strings until something explicitly resolves them).
+from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import logging
 import os
+import random
 import shutil
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Dict, List, Optional
 
 import cv2
 import numpy as np
@@ -42,6 +73,84 @@ from habitat_sim.nav.greedy_geodesic_follower import GreedyGeodesicFollower
 from habitat_sim.utils.common import quat_from_coeffs
 
 GT_STEP = 6  # SNav predicts 6 future actions per step
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Domain-randomization helpers
+# ─────────────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class RenderParams:
+    """Per (episode, variant) randomization snapshot."""
+
+    camera_height: float
+    hfov: float
+    width: int
+    height: int
+    variant_idx: int
+
+    def signature(self) -> str:
+        return (f"h{self.camera_height:.3f}_f{self.hfov:.2f}_"
+                f"{self.width}x{self.height}_v{self.variant_idx}")
+
+
+def _episode_rng(episode_id: int, variant_idx: int, base_seed: int) -> random.Random:
+    """Deterministic per (episode, variant, base_seed) RNG."""
+    key = f"{base_seed}|{episode_id}|{variant_idx}".encode("utf-8")
+    digest = hashlib.blake2b(key, digest_size=8).digest()
+    seed = int.from_bytes(digest, "big", signed=False)
+    return random.Random(seed)
+
+
+def sample_render_params(
+    *,
+    episode_id: int,
+    variant_idx: int,
+    base_seed: int,
+    base_camera_height: float,
+    camera_height_jitter: float,
+    base_hfov: float,
+    hfov_jitter: float,
+    base_width: int,
+    base_height: int,
+    resolution_choices: List[int],
+) -> RenderParams:
+    """Sample one random (height, hfov, resolution) tuple deterministically.
+
+    With all jitter knobs = 0 and ``resolution_choices`` empty this returns the
+    base values verbatim (so the renderer is bitwise-identical to the vanilla
+    path).
+    """
+    rng = _episode_rng(episode_id, variant_idx, base_seed)
+
+    if camera_height_jitter > 0.0:
+        camera_height = base_camera_height + rng.uniform(
+            -camera_height_jitter, camera_height_jitter)
+        # Clamp to plausible robot heights.
+        camera_height = max(0.20, camera_height)
+    else:
+        camera_height = base_camera_height
+
+    if hfov_jitter > 0.0:
+        hfov = base_hfov + rng.uniform(-hfov_jitter, hfov_jitter)
+        hfov = max(30.0, min(160.0, hfov))
+    else:
+        hfov = base_hfov
+
+    if resolution_choices:
+        res = rng.choice(resolution_choices)
+        width = height = int(res)
+    else:
+        width = base_width
+        height = base_height
+
+    return RenderParams(
+        camera_height=float(camera_height),
+        hfov=float(hfov),
+        width=int(width),
+        height=int(height),
+        variant_idx=int(variant_idx),
+    )
 
 
 @dataclass
@@ -72,6 +181,29 @@ def _load_json(path: str):
             return json.load(f)
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def resolve_mp3d_scene_path(scene_id: str, scenes_root: str) -> Optional[str]:
+    """Map R2R-CE scene_id (e.g. mp3d/scan/scan.glb) to a local GLB path.
+
+    MP3D is usually laid out as ``{scenes_root}/{scan}/{scan}.glb``, while
+    VLN-CE scene_id keeps the ``mp3d/`` prefix — naive join duplicates it.
+    """
+    root = Path(scenes_root)
+    sid = scene_id.replace("\\", "/")
+    if sid.startswith("mp3d/"):
+        sid = sid[len("mp3d/") :]
+    candidate = root / sid
+    if candidate.exists():
+        return str(candidate)
+    scan = sid.split("/")[0]
+    fallback = root / scan / f"{scan}.glb"
+    if fallback.exists():
+        return str(fallback)
+    legacy = root / scene_id.replace("\\", "/")
+    if legacy.exists():
+        return str(legacy)
+    return None
 
 
 def load_r2r_episodes(json_path: str) -> List[Episode]:
@@ -141,16 +273,23 @@ def load_rxr_episodes(json_path: str, lang_filter: str = "en") -> List[Episode]:
 
 def build_sim(
     scene_path: str,
-    width: int = 640,
-    height: int = 480,
-    hfov: float = 79.0,
+    width: int = 384,
+    height: int = 384,
+    hfov: float = 120.0,
     forward_step: float = 0.25,
-    turn_angle: float = 15.0,
-    camera_height: float = 0.88,
+    turn_angle: float = 30.0,
+    camera_height: float = 1.5,
+    gpu_device_id: int = 0,
 ) -> habitat_sim.Simulator:
     sim_cfg = habitat_sim.SimulatorConfiguration()
     sim_cfg.scene_id = scene_path
     sim_cfg.enable_physics = False
+    # 0 = first NVIDIA GPU (fast; default). -1 = software OpenGL via Mesa
+    # llvmpipe (CPU; only useful as a fallback). NavSpace's eval
+    # (evaluation/common.py) uses gpu_device_id=-1 + LD_PRELOAD of the
+    # NVIDIA GLX libs, which effectively still runs on GPU; we just expose
+    # the device id explicitly here so the user can pick a specific card.
+    sim_cfg.gpu_device_id = gpu_device_id
 
     rgb_spec = habitat_sim.CameraSensorSpec()
     rgb_spec.uuid = "rgb"
@@ -189,6 +328,8 @@ def render_episode_streamvln(
     dataset_tag: str,
     max_steps: int = 500,
     goal_radius: float = 0.5,
+    variant_idx: int = 0,
+    render_params: Optional[RenderParams] = None,
 ) -> Optional[Dict]:
     """
     Render one episode using GreedyGeodesicFollower to navigate to
@@ -198,6 +339,10 @@ def render_episode_streamvln(
     actions[0] = -1 (initial, no action); len(actions) == number of frames.
 
     Returns annotation dict on success, None if the episode should be skipped.
+
+    When ``variant_idx > 0`` (or any non-vanilla ``render_params`` is supplied
+    by the caller) the per-clip folder gets a ``_v<variant_idx>`` suffix so
+    multiple randomized variants of the same episode can coexist on disk.
     """
     scan = episode.scene_id.split("/")[-2]
     ep_id = episode.episode_id
@@ -208,7 +353,9 @@ def render_episode_streamvln(
         agent_state.rotation = quat_from_coeffs(episode.start_rotation)
     sim.get_agent(0).set_state(agent_state)
 
-    video_rel = os.path.join("images", f"{scan}_{dataset_tag}_{ep_id:06d}")
+    variant_suffix = f"_v{variant_idx}" if variant_idx > 0 else ""
+    video_rel = os.path.join(
+        "images", f"{scan}_{dataset_tag}_{ep_id:06d}{variant_suffix}")
     rgb_dir = os.path.join(output_dir, video_rel, "rgb")
     os.makedirs(rgb_dir, exist_ok=True)
 
@@ -261,12 +408,27 @@ def render_episode_streamvln(
         shutil.rmtree(os.path.join(output_dir, video_rel), ignore_errors=True)
         return None
 
-    return {
+    anno: Dict = {
         "id": ep_id,
         "video": video_rel,
         "instructions": episode.instructions,
         "actions": actions,
     }
+    if variant_idx > 0:
+        # Disambiguate annotation rows for K>1 variants. The base "id" stays
+        # equal to the episode_id so any downstream filter that keys on
+        # episode_id still works.
+        anno["variant_idx"] = variant_idx
+        anno["id"] = f"{ep_id:06d}_v{variant_idx}"
+    if render_params is not None:
+        anno["render_params"] = {
+            "camera_height": render_params.camera_height,
+            "hfov": render_params.hfov,
+            "width": render_params.width,
+            "height": render_params.height,
+            "variant_idx": render_params.variant_idx,
+        }
+    return anno
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -331,6 +493,8 @@ def render_episode_snav_frames(
     video_subdir: str,
     max_steps: int = 500,
     goal_radius: float = 0.5,
+    variant_idx: int = 0,
+    render_params: Optional[RenderParams] = None,
 ) -> Optional[List[Dict]]:
     """Render one episode, save per-step observation JPGs (O(N) storage),
     and produce LLaVA-format annotation dicts with ``video_nframes`` field.
@@ -340,7 +504,8 @@ def render_episode_snav_frames(
     """
     scan = episode.scene_id.split("/")[-2]
     ep_id = episode.episode_id
-    ep_tag = f"{scan}_{dataset_tag}_{ep_id:06d}"
+    variant_suffix = f"_v{variant_idx}" if variant_idx > 0 else ""
+    ep_tag = f"{scan}_{dataset_tag}_{ep_id:06d}{variant_suffix}"
 
     agent_state = habitat_sim.AgentState()
     agent_state.position = np.array(episode.start_position, dtype=np.float32)
@@ -425,6 +590,8 @@ def render_episode_video(
     video_subdir: str,
     max_steps: int = 500,
     goal_radius: float = 0.5,
+    variant_idx: int = 0,
+    render_params: Optional[RenderParams] = None,
 ) -> Optional[List[Dict]]:
     """Render one episode and directly produce cumulative MP4 videos +
     LLaVA-format annotation dicts (one per step per instruction).
@@ -433,7 +600,8 @@ def render_episode_video(
     """
     scan = episode.scene_id.split("/")[-2]
     ep_id = episode.episode_id
-    ep_tag = f"{scan}_{dataset_tag}_{ep_id:06d}"
+    variant_suffix = f"_v{variant_idx}" if variant_idx > 0 else ""
+    ep_tag = f"{scan}_{dataset_tag}_{ep_id:06d}{variant_suffix}"
 
     agent_state = habitat_sim.AgentState()
     agent_state.position = np.array(episode.start_position, dtype=np.float32)
@@ -531,20 +699,34 @@ def main():
                         help="r2r for R2R-CE/EnvDrop, rxr for RxR-CE")
     parser.add_argument("--dataset_tag", default="r2r",
                         help="Tag in output paths (r2r / rxr / envdrop)")
-    parser.add_argument("--scenes_root",
-                        default="/mnt/longyuxing/yhl/data")
+    parser.add_argument("--scenes_root", required=True,
+                        help="Root of HM3D/MP3D scene assets (user-provided)")
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--log_path", default=None)
     parser.add_argument("--max_episodes", type=int, default=0,
                         help="0 = all episodes")
     parser.add_argument("--max_steps", type=int, default=500)
     parser.add_argument("--goal_radius", type=float, default=0.5)
-    parser.add_argument("--width", type=int, default=640)
-    parser.add_argument("--height", type=int, default=480)
-    parser.add_argument("--hfov", type=float, default=79.0)
+    parser.add_argument("--width", type=int, default=384,
+                        help="Base RGB width. Default 384 matches the "
+                             "NavSpace eval simulator and the LLaVA-Video "
+                             "SigLIP-So400M native input size.")
+    parser.add_argument("--height", type=int, default=384,
+                        help="Base RGB height (see --width).")
+    parser.add_argument("--hfov", type=float, default=120.0,
+                        help="Base camera HFOV in degrees. Default 120° "
+                             "matches the NavSpace eval simulator "
+                             "(evaluation/common.py::create_simulator).")
     parser.add_argument("--forward_step", type=float, default=0.25)
-    parser.add_argument("--turn_angle", type=float, default=15.0)
-    parser.add_argument("--camera_height", type=float, default=0.88)
+    parser.add_argument("--turn_angle", type=float, default=30.0,
+                        help="Per-action turn angle in degrees. Default 30° "
+                             "matches the NavSpace eval simulator. Setting "
+                             "this to a different value will cause the "
+                             "trained model's `←`/`→` to under-/over-rotate "
+                             "at inference.")
+    parser.add_argument("--camera_height", type=float, default=1.5,
+                        help="Base camera height in metres. Default 1.5 "
+                             "matches the NavSpace eval simulator.")
     parser.add_argument("--lang_filter", default="en",
                         help="Language filter for RxR data")
     parser.add_argument("--output_mode",
@@ -564,6 +746,40 @@ def main():
                              "episode instructions. Expected format: "
                              "[{\"id\": <episode_id>, \"instructions\": "
                              "[...]}]. Episodes without a match are skipped.")
+    parser.add_argument("--camera_height_jitter", type=float, default=0.0,
+                        help="If > 0, sample per-episode camera_height ~ "
+                             "U(base-Δ, base+Δ). Δ is in metres. "
+                             "Default 0 = no randomization.")
+    parser.add_argument("--hfov_jitter", type=float, default=0.0,
+                        help="If > 0, sample per-episode hfov ~ "
+                             "U(base-Δ, base+Δ). Δ is in degrees. "
+                             "Default 0 = no randomization.")
+    parser.add_argument("--resolution_choices", type=str, default="",
+                        help="Comma-separated list of square resolutions "
+                             "(e.g. '256,320,384,448,512'). If non-empty, "
+                             "per-episode resolution is sampled from the "
+                             "list and overrides --width/--height. Default "
+                             "empty = no randomization.")
+    parser.add_argument("--num_render_variants", type=int, default=1,
+                        help="Render each episode K times with independent "
+                             "random params. Default 1 (single randomized "
+                             "render per episode).")
+    parser.add_argument("--randomize_seed", type=int, default=42,
+                        help="Deterministic seed for per-episode (height, "
+                             "hfov, resolution) sampling. Same seed + same "
+                             "episode_id always picks the same params.")
+    parser.add_argument("--gpu_device_id", type=int, default=0,
+                        help="Habitat-Sim GPU device id. 0 = first NVIDIA "
+                             "GPU (default; fast — verified ~4400 fps "
+                             "headless on RTX 4090). 1 = second GPU (use "
+                             "this if GPU 0 has an active display). -1 = "
+                             "software OpenGL via Mesa (CPU; only as a "
+                             "fallback). Note: GPU rendering requires the "
+                             "LD_PRELOAD / __EGL_VENDOR_LIBRARY_FILENAMES "
+                             "shim set up in run_render_*.sh; running this "
+                             "script directly without that shim may crash "
+                             "with 'InvalidValue' on conda envs that ship "
+                             "their own Mesa libGL.")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -607,9 +823,37 @@ def main():
     logging.info("Dataset tag: %s, format: %s, output_mode: %s",
                  args.dataset_tag, args.data_format, args.output_mode)
     logging.info("Camera: %dx%d HFOV=%s forward=%.2fm turn=%.1f° "
-                 "height=%.2fm",
+                 "height=%.2fm gpu_device_id=%d (-1=CPU/Mesa, "
+                 "0=first NVIDIA GPU)",
                  args.width, args.height, args.hfov, args.forward_step,
-                 args.turn_angle, args.camera_height)
+                 args.turn_angle, args.camera_height, args.gpu_device_id)
+
+    resolution_choices: List[int] = []
+    if args.resolution_choices.strip():
+        for tok in args.resolution_choices.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            resolution_choices.append(int(tok))
+
+    randomization_active = (
+        args.camera_height_jitter > 0.0
+        or args.hfov_jitter > 0.0
+        or bool(resolution_choices)
+        or args.num_render_variants > 1
+    )
+    if randomization_active:
+        logging.info(
+            "Domain randomization ENABLED: height_jitter=%.3f m, "
+            "hfov_jitter=%.2f°, res_choices=%s, K=%d, seed=%d",
+            args.camera_height_jitter, args.hfov_jitter,
+            resolution_choices or "—", args.num_render_variants,
+            args.randomize_seed,
+        )
+        logging.info("Note: sim will be rebuilt per (episode, variant) "
+                     "pair so each randomized sensor spec takes effect.")
+    else:
+        logging.info("Domain randomization disabled (vanilla render).")
 
     by_scene: Dict[str, List[Episode]] = defaultdict(list)
     for ep in episodes:
@@ -631,6 +875,9 @@ def main():
             existing_ids = {a["id"] for a in annotations}
             logging.info("Resuming (frames): %d existing annotations",
                          len(existing_ids))
+            logging.info("Resume keys are mixed int (v=0) and "
+                         "str '<id>_v<k>' (k>0). Both forms are checked "
+                         "per-variant below.")
     else:
         if os.path.exists(llava_anno_path):
             with open(llava_anno_path, "r") as f:
@@ -650,87 +897,175 @@ def main():
     skipped = 0
     rendered = 0
 
-    progress = tqdm(total=total_eps, desc="Rendering", unit="ep")
+    K = max(1, args.num_render_variants)
+    progress = tqdm(total=total_eps * K, desc="Rendering", unit="render")
+
     for scene_id, eps in sorted(by_scene.items()):
-        scene_path = os.path.join(args.scenes_root, scene_id)
-        if not os.path.exists(scene_path):
-            logging.warning("Scene not found: %s", scene_path)
-            progress.update(len(eps))
-            skipped += len(eps)
+        scene_path = resolve_mp3d_scene_path(scene_id, args.scenes_root)
+        if scene_path is None:
+            logging.warning(
+                "Scene not found for scene_id=%s under scenes_root=%s",
+                scene_id,
+                args.scenes_root,
+            )
+            progress.update(len(eps) * K)
+            skipped += len(eps) * K
             continue
 
-        logging.info("Loading scene: %s (%d eps)", scene_path, len(eps))
-        sim = build_sim(
-            scene_path, args.width, args.height, args.hfov,
-            args.forward_step, args.turn_angle, args.camera_height)
+        logging.info("Loading scene: %s (%d eps × K=%d variants)",
+                     scene_path, len(eps), K)
+
+        # If randomization is OFF we build the sim ONCE per scene (the fast,
+        # original code path). Otherwise we build it per (episode, variant)
+        # pair below.
+        scene_sim: Optional[habitat_sim.Simulator] = None
+        if not randomization_active:
+            scene_sim = build_sim(
+                scene_path, args.width, args.height, args.hfov,
+                args.forward_step, args.turn_angle, args.camera_height,
+                gpu_device_id=args.gpu_device_id)
 
         for ep in eps:
             scan = ep.scene_id.split("/")[-2]
-            ep_tag = f"{scan}_{args.dataset_tag}_{ep.episode_id:06d}"
 
-            if args.output_mode == "frames":
-                if ep.episode_id in existing_ids:
-                    progress.update(1)
-                    continue
-                anno = render_episode_streamvln(
-                    sim, ep, args.output_dir, args.dataset_tag,
-                    max_steps=args.max_steps,
-                    goal_radius=args.goal_radius)
-                if anno:
-                    annotations.append(anno)
-                    existing_ids.add(ep.episode_id)
-                    rendered += 1
-                    logging.info("Episode %d: %d actions",
-                                 ep.episode_id, len(anno["actions"]) - 1)
+            for v in range(K):
+                if randomization_active:
+                    params = sample_render_params(
+                        episode_id=ep.episode_id,
+                        variant_idx=v,
+                        base_seed=args.randomize_seed,
+                        base_camera_height=args.camera_height,
+                        camera_height_jitter=args.camera_height_jitter,
+                        base_hfov=args.hfov,
+                        hfov_jitter=args.hfov_jitter,
+                        base_width=args.width,
+                        base_height=args.height,
+                        resolution_choices=resolution_choices,
+                    )
                 else:
-                    skipped += 1
-                    logging.warning("Skipped episode %d", ep.episode_id)
+                    params = RenderParams(
+                        camera_height=args.camera_height,
+                        hfov=args.hfov,
+                        width=args.width,
+                        height=args.height,
+                        variant_idx=0,
+                    )
 
-            elif args.output_mode == "video":
-                if ep_tag in existing_ids:
-                    progress.update(1)
-                    continue
-                entries = render_episode_video(
-                    sim, ep, args.output_dir, args.dataset_tag,
-                    video_subdir=args.video_subdir or args.dataset_tag,
-                    max_steps=args.max_steps,
-                    goal_radius=args.goal_radius)
-                if entries:
-                    llava_annotations.extend(entries)
-                    existing_ids.add(ep_tag)
-                    rendered += 1
-                    logging.info("Episode %d: %d videos, %d LLaVA entries",
-                                 ep.episode_id,
-                                 entries[0]["video"].count("step_") if entries else 0,
-                                 len(entries))
+                variant_suffix = f"_v{v}" if v > 0 else ""
+                ep_tag = f"{scan}_{args.dataset_tag}_{ep.episode_id:06d}{variant_suffix}"
+
+                # ── Resume logic ──
+                if args.output_mode == "frames":
+                    # The "id" in annotations.json carries the variant_idx for
+                    # v>0; for v=0 it's just episode_id (back-compat).
+                    if v == 0:
+                        already = ep.episode_id in existing_ids
+                    else:
+                        already = f"{ep.episode_id:06d}_v{v}" in existing_ids
+                    if already:
+                        progress.update(1)
+                        continue
                 else:
-                    skipped += 1
-                    logging.warning("Skipped episode %d", ep.episode_id)
+                    if ep_tag in existing_ids:
+                        progress.update(1)
+                        continue
 
-            elif args.output_mode == "snav_frames":
-                if ep_tag in existing_ids:
-                    progress.update(1)
-                    continue
-                entries = render_episode_snav_frames(
-                    sim, ep, args.output_dir, args.dataset_tag,
-                    video_subdir=args.video_subdir or args.dataset_tag,
-                    max_steps=args.max_steps,
-                    goal_radius=args.goal_radius)
-                if entries:
-                    llava_annotations.extend(entries)
-                    existing_ids.add(ep_tag)
-                    rendered += 1
-                    logging.info("Episode %d: %d frames, %d LLaVA entries",
-                                 ep.episode_id,
-                                 entries[-1].get("video_nframes", 0),
-                                 len(entries))
+                # ── Build / refresh sim ──
+                if randomization_active:
+                    sim = build_sim(
+                        scene_path,
+                        width=params.width,
+                        height=params.height,
+                        hfov=params.hfov,
+                        forward_step=args.forward_step,
+                        turn_angle=args.turn_angle,
+                        camera_height=params.camera_height,
+                        gpu_device_id=args.gpu_device_id,
+                    )
                 else:
-                    skipped += 1
-                    logging.warning("Skipped episode %d", ep.episode_id)
+                    sim = scene_sim  # type: ignore[assignment]
 
-            progress.update(1)
+                try:
+                    if args.output_mode == "frames":
+                        anno = render_episode_streamvln(
+                            sim, ep, args.output_dir, args.dataset_tag,
+                            max_steps=args.max_steps,
+                            goal_radius=args.goal_radius,
+                            variant_idx=v,
+                            render_params=params if randomization_active else None,
+                        )
+                        if anno:
+                            annotations.append(anno)
+                            if v == 0:
+                                existing_ids.add(ep.episode_id)
+                            else:
+                                existing_ids.add(f"{ep.episode_id:06d}_v{v}")
+                            rendered += 1
+                            logging.info(
+                                "Ep %d/v%d: %d actions (h=%.2f hfov=%.1f "
+                                "%dx%d)",
+                                ep.episode_id, v, len(anno["actions"]) - 1,
+                                params.camera_height, params.hfov,
+                                params.width, params.height,
+                            )
+                        else:
+                            skipped += 1
+                            logging.warning(
+                                "Skipped episode %d/v%d", ep.episode_id, v)
 
-        sim.close()
+                    elif args.output_mode == "video":
+                        entries = render_episode_video(
+                            sim, ep, args.output_dir, args.dataset_tag,
+                            video_subdir=args.video_subdir or args.dataset_tag,
+                            max_steps=args.max_steps,
+                            goal_radius=args.goal_radius,
+                            variant_idx=v,
+                            render_params=params if randomization_active else None,
+                        )
+                        if entries:
+                            llava_annotations.extend(entries)
+                            existing_ids.add(ep_tag)
+                            rendered += 1
+                            logging.info(
+                                "Ep %d/v%d: %d videos, %d entries",
+                                ep.episode_id, v,
+                                entries[0]["video"].count("step_") if entries else 0,
+                                len(entries))
+                        else:
+                            skipped += 1
+                            logging.warning(
+                                "Skipped episode %d/v%d", ep.episode_id, v)
+
+                    elif args.output_mode == "snav_frames":
+                        entries = render_episode_snav_frames(
+                            sim, ep, args.output_dir, args.dataset_tag,
+                            video_subdir=args.video_subdir or args.dataset_tag,
+                            max_steps=args.max_steps,
+                            goal_radius=args.goal_radius,
+                            variant_idx=v,
+                            render_params=params if randomization_active else None,
+                        )
+                        if entries:
+                            llava_annotations.extend(entries)
+                            existing_ids.add(ep_tag)
+                            rendered += 1
+                            logging.info(
+                                "Ep %d/v%d: %d frames, %d entries",
+                                ep.episode_id, v,
+                                entries[-1].get("video_nframes", 0),
+                                len(entries))
+                        else:
+                            skipped += 1
+                            logging.warning(
+                                "Skipped episode %d/v%d", ep.episode_id, v)
+                finally:
+                    if randomization_active:
+                        sim.close()
+
+                progress.update(1)
+
+        if scene_sim is not None:
+            scene_sim.close()
 
         # Checkpoint after each scene
         if args.output_mode == "frames":

@@ -1,143 +1,126 @@
-# SNav training (Stage-1 vanilla)
+# SNav training
 
-This directory contains the **vanilla SFT training recipe** for SNav, the
-LLaVA-Video-style navigation policy that `evaluation/eval_snav.py` evaluates.
+## 1. What this folder is for
 
-> **Scope.** Everything under `snav_training/` is limited to the **Stage-1
-> vanilla supervised fine-tuning** (geodesic-follower expert trajectories +
-> per-step action labels). It does **not** include any of the data-augmentation
-> pipelines used in later stages (instruction rewriting with LLMs and etc). Those belong to a
-> separate release and are intentionally out of scope here.
+Train SNav end-to-end:
 
-## What this pipeline does
+- **Stage A** — VLN-mix SFT on LLaVA-Video-7B-Qwen2 (nav-only by default)  
+- **Stage B** — paper final SFT on `aug_mix` + optional `manual_98` (hist=8, future=6) → SNav-7B  
 
-1. **Data generation** — render R2R-CE / RxR-CE / (optionally) EnvDrop episodes
-   through Habitat-Sim's `GreedyGeodesicFollower` into per-step RGB frames plus
-   an `annotations.json` index (StreamVLN-compatible layout).
-2. **Training** — full-parameter SFT of a LLaVA-Video-7B-Qwen2 base model on
-   the rendered data via the in-repo `train_snav.py` entry (DeepSpeed ZeRO-2).
-3. **Evaluation** (optional) — hand off the resulting checkpoint to
-   `evaluation/eval_snav.py` to score on NavSpace.
+Also includes Habitat renderers and a baseline Stage-1 trainer (`train_snav.py`) for ablations.  
+Data under `snav_data/` / `train_data/` is **not** shipped.
 
-## Layout
+> Paper-chain docs live **here**. [`docs/training.md`](../docs/training.md) only covers the
+> older Stage-1 baseline (`train_snav.py`).
+
+## 2. Layout
 
 ```
 snav_training/
-├── README.md                            (this file)
-├── train_snav.py                        main SFT entry (used by run_snav_train.sh)
-├── dataset_snav.py                      PyTorch dataset + collator for SNav / QA
-├── configs/
-│   ├── snav_data.yaml.template          optional YAML listing rendered folders
-│   ├── deepspeed_zero2.json             DeepSpeed ZeRO-2 config (default)
-│   └── deepspeed_zero3.json             ZeRO-3 with CPU offload (use for <80 GB GPUs)
-├── data_generation/
-│   ├── README.md                        data-generation guide
-│   ├── render_streamvln.py              Python renderer (R2R-CE / RxR-CE / EnvDrop)
-│   ├── run_render_r2rce.sh              R2R-CE train split
-│   ├── run_render_rxrce.sh              RxR-CE train split
-│   └── run_render_envdrop.sh            EnvDrop subset
-└── scripts/
-    ├── run_snav_train.sh                SNav Stage-1 vanilla SFT launcher
-    └── run_pipeline.sh                  render → train → eval orchestrator
+├── snav_llava/                 # trainer package (train_mem / model)
+├── configs/                    # Stage A/B YAML + DeepSpeed
+├── stage_a/                    # R2R/RxR collect + stepwise JSON builders
+├── data_generation/            # baseline Stage-1 render (NOT paper Stage A)
+├── scripts/
+│   ├── prepare_stage_a_data.sh
+│   ├── launch_vln_mix_stage_a.sh
+│   ├── launch_paper_sft_stage_b.sh
+│   ├── train_paper.sh
+│   ├── build_hist8_future6.py
+│   └── run_snav_train.sh       # baseline Stage-1 only
+├── train_snav.py
+└── dataset_snav.py
 ```
 
-## Prerequisites
+## 3. Prerequisites
 
-- One conda env with Habitat-Sim (0.3.x) **and** a LLaVA / DeepSpeed stack. The
-  evaluation setup already uses `streamvln` for Habitat; the same env also
-  works for training once `deepspeed` + `tensorboard` are installed
-  (already included in the evaluation's `requirements-local-model.txt`).
-- Scene assets (HM3D and/or MP3D) under `${SCENES_ROOT}`.
-- A LLaVA codebase on `PYTHONPATH`. If you already have StreamVLN checked out,
-  its `StreamVLN/` root ships the expected `llava/` package and can be reused;
-  set `LLAVA_ROOT` to that directory.
-- A base model for SFT, e.g. `lmms-lab/LLaVA-Video-7B-Qwen2`.
+| Need | Notes |
+|------|--------|
+| Conda env with `habitat-sim` + `habitat-lab` (VLN configs) | Stage A collect / aug render |
+| `deepspeed`, `accelerate`, `transformers`, `torch` (CUDA-matched) | Stage A/B train |
+| Optional `flash-attn` | Trainer defaults to flash-attn; set attn impl / install as needed |
+| Local **LLaVA-Video-7B-Qwen2** + **SigLIP** | Launchers set `HF_HUB_OFFLINE=1` by default |
+| Scenes / VLN-CE | See layout below |
 
-## End-to-end usage
+Expected data layout (override with env vars):
 
-### 1. Generate training data
+```text
+$NAVIGATION_ROOT/
+  mp3d_scenes/                    # MP3D_ROOT — needs mp3d.scene_dataset_config.json
+  R2R_VLNCE_v1-3/train/train.json.gz
+  RxR_VLNCE_v0/train/train_guide.json.gz
+  LLaVA-Video-7B-Qwen2/
+  siglip-so400m-patch14-384/
+
+<repo>/train_data/                # TRAIN_DATA_ROOT default — matches configs/*.yaml
+```
+
+Upstream sources (download yourself): Matterport3D, [VLN-CE](https://github.com/jacobkrantz/VLN-CE)
+R2R-CE / RxR-CE releases, and the public LLaVA-Video / SigLIP checkpoints.
+
+`requirements_paper.txt` is a **host freeze** (may contain private pins). Do not treat it as a
+public one-shot install list.
+
+## 4. End-to-end chain
 
 ```bash
-export DATA_ROOT=/abs/path/to/snav_data
-export SCENES_ROOT=/abs/path/to/scene_datasets
-export R2RCE_TRAIN_JSON=/abs/path/to/R2R_VLNCE_v1-3_preprocessed/train/train.json.gz
-export RXRCE_TRAIN_JSON=/abs/path/to/RxR_VLNCE_v0/train/train_guide.json
-export ENVDROP_SOURCE_JSON=/abs/path/to/R2R_VLNCE_v1-3_preprocessed/envdrop/envdrop.json.gz
-
-conda activate streamvln
-bash data_generation/run_render_r2rce.sh
-bash data_generation/run_render_rxrce.sh
-bash data_generation/run_render_envdrop.sh
+cd /path/to/NavSpace
+export NAVIGATION_ROOT=/path/to/mp3d_and_vlnce
+export TRAIN_DATA_ROOT=$PWD/train_data           # default; matches configs/*.yaml
+export LLM_VERSION=$NAVIGATION_ROOT/LLaVA-Video-7B-Qwen2
+export VISION_MODEL_VERSION=$NAVIGATION_ROOT/siglip-so400m-patch14-384
+export PYTHONPATH=$PWD/snav_training:$PYTHONPATH
 ```
 
-This produces `${DATA_ROOT}/{r2rce,rxrce,envdrop}/annotations.json` plus
-per-episode `rgb/*.jpg` frames. See
-[`data_generation/README.md`](data_generation/README.md) for the full flag
-reference.
-
-### 2. Launch SFT
+**1. Prepare Stage-A data** (MP3D + R2R-CE + RxR-CE already on disk):
 
 ```bash
-export LLAVA_ROOT=/abs/path/to/StreamVLN        # any checkout providing llava/
-export MODEL_PATH=/abs/path/to/LLaVA-Video-7B-Qwen2
-export VIDEO_FOLDERS=${DATA_ROOT}/r2rce,${DATA_ROOT}/rxrce,${DATA_ROOT}/envdrop
-export OUTPUT_DIR=/abs/path/to/checkpoints/snav_stage1_vanilla
-
-bash scripts/run_snav_train.sh
+bash snav_training/scripts/prepare_stage_a_data.sh
+# phases: all|collect|build|stopinstr ; smoke: R2R_TRAJ_NUM=2 RXR_TRAJ_NUM=2
 ```
 
-Switch to ZeRO-3 with CPU offload for <80 GB GPUs:
+Writes `$TRAIN_DATA_ROOT/training_data_*` frames and:
+`r2r_stepwise_train_jupyter_full.json`, `rxr_stepwise_train_jupyter_full_en.json`,
+plus stop-only and instruction-reconstruction companions.
+
+**2. Stage A train** (nav-only YAML by default):
 
 ```bash
-export DEEPSPEED_CONFIG=$(pwd)/configs/deepspeed_zero3.json
-bash scripts/run_snav_train.sh
+export IMAGE_FOLDER=$TRAIN_DATA_ROOT
+bash snav_training/scripts/launch_vln_mix_stage_a.sh
+# optional paper full mix (+ LLaVA-OE JSONs you prepare yourself):
+# DATA_YAML=$PWD/snav_training/configs/train_llava_mix_stopdup.yaml \
+# MID_RUN_NAME=r2r_rxr_llava_mix_stopdup bash snav_training/scripts/launch_vln_mix_stage_a.sh
 ```
 
-Optional: mix a small fraction of general Video-QA data (LLaVA-Video-178K
-format) to mitigate catastrophic forgetting:
+**3. Stage-B images** via [`../data_augmentation/`](../data_augmentation/) → `snav_data/aug_mix`
+(and optional `snav_data/manual_98`).
+
+**4. Build Stage-B JSON + train:**
 
 ```bash
-export QA_JSON_PATHS=/abs/path/to/qa_train.json
-export QA_VIDEO_ROOTS=/abs/path/to/qa_videos
-export QA_RATIO=0.15
-bash scripts/run_snav_train.sh
+# aug only
+python snav_training/scripts/build_hist8_future6.py \
+  --aug-root snav_data/aug_mix \
+  --out-dir train_data
+
+# or aug + manual_98
+python snav_training/scripts/build_hist8_future6.py \
+  --aug-root snav_data/aug_mix \
+  --manual-root snav_data/manual_98 \
+  --out-dir train_data
+
+export PREV_STAGE_CHECKPOINT=$TRAIN_DATA_ROOT/work_dirs/r2r_rxr_llava_mix_nav_only
+export IMAGE_FOLDER=$PWD/snav_data/aug_mix
+bash snav_training/scripts/launch_paper_sft_stage_b.sh
 ```
 
-### 3. (Optional) Run NavSpace evaluation on the new checkpoint
+**5. Eval** with [`../evaluation/eval_snav.py`](../evaluation/eval_snav.py)
+(defaults: 384×384, max-frames 16, HFOV 120; pass `--vision-tower-path`).
+
+**Baseline Stage-1 only** (not the paper chain) — see [`data_generation/README.md`](data_generation/README.md):
 
 ```bash
-export HM3D_BASE_PATH=/abs/path/to/hm3d_v0.2
-EVAL_TASK=environment_state \
-  SKIP_RENDER=1 SKIP_TRAIN=1 bash scripts/run_pipeline.sh
+export LLAVA_ROOT=... MODEL_PATH=... VIDEO_FOLDERS=... OUTPUT_DIR=...
+bash snav_training/scripts/run_snav_train.sh
 ```
-
-Or call `evaluation/eval_snav.py` directly — see `docs/evaluation.md` for the
-full CLI surface.
-
-## Reproducibility defaults (matches SNav Stage-1 v1)
-
-| Knob | Value |
-| --- | --- |
-| Base model | `LLaVA-Video-7B-Qwen2` |
-| Prompt version | `qwen_1_5` |
-| Learning rate | `5e-5`, cosine schedule, `warmup_ratio=0.075` |
-| Epochs | 1 |
-| Per-device batch / grad-accum | 1 / 12 |
-| Frames per sample | 16 |
-| Future actions predicted per chunk | 6 |
-| Max seq length | 32768 |
-| Precision | BF16 + `sdpa` attention |
-| Optimizer | DeepSpeed ZeRO-2 (ZeRO-3 available as opt-in) |
-
-All knobs are exposed as env vars or CLI flags to `train_snav.py`; check the
-top of `scripts/run_snav_train.sh` for the full list.
-
-## What's explicitly not here
-
-- No DAgger / trajectory-correction loop.
-- No instruction rewriting via LLM (the SNav Stage-2 flow).
-- No panorama augmentation, no landmark-enriched supervision.
-- No evaluation-time beam search / rollback logic.
-
-If you need those flows, stay tuned for the SNav Stage-2/3 release. For the
-vanilla baseline above, everything in this folder is self-contained.

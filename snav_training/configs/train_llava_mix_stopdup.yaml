@@ -1,0 +1,21 @@
+# Stage A (VLN-mix) data recipe matching H200 run
+# r2r_rxr_llava_mix_stopdup_20260423_161304.
+#
+# Place the JSON files under <NavSpace>/train_data/ (sibling of snav_training/),
+# or rewrite json_path to absolute locations after you prepare the data.
+# Image frames are resolved via IMAGE_FOLDER (usually the same train_data root).
+datasets:
+  - json_path: ../../train_data/r2r_stepwise_train_jupyter_full.json
+    sampling_strategy: all
+  - json_path: ../../train_data/r2r_stepwise_train_jupyter_full_stoponly.json
+    sampling_strategy: all
+  - json_path: ../../train_data/rxr_stepwise_train_jupyter_full_en.json
+    sampling_strategy: all
+  - json_path: ../../train_data/rxr_stepwise_train_jupyter_full_en_stoponly.json
+    sampling_strategy: all
+  - json_path: ../../train_data/r2r_rxr_instruction_from_fullobs_enmix_jupyter.json
+    sampling_strategy: all
+  - json_path: ../../train_data/llava_video_oe_activitynetqa_0_120_image.json
+    sampling_strategy: all
+  - json_path: ../../train_data/llava_video_oe_nextqa_0_120_image.json
+    sampling_strategy: all

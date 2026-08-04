@@ -237,23 +237,34 @@ def check_profiles_consistency(expected_resolution: int) -> Callable[[], None]:
 
 
 def check_entry_resolution_defaults(expected_resolution: int) -> Callable[[], None]:
+    """LLM/StreamVLN default to ``expected_resolution`` (usually 224).
+
+    SNav is train-aligned at 384×384 and is checked separately.
+    """
+
     def _check() -> None:
         from evaluation.eval_snav import build_parser as build_snav_parser
         from evaluation.eval_streamvln import build_parser as build_streamvln_parser
 
-        for name, parser in [
-            ("eval_snav", build_snav_parser()),
-            ("eval_streamvln", build_streamvln_parser()),
-        ]:
-            defaults = {a.dest: a.default for a in parser._actions}
-            assert defaults.get("frame_width") == expected_resolution, (
-                f"{name} --frame-width default={defaults.get('frame_width')} "
-                f"but expected {expected_resolution}"
-            )
-            assert defaults.get("frame_height") == expected_resolution, (
-                f"{name} --frame-height default={defaults.get('frame_height')} "
-                f"but expected {expected_resolution}"
-            )
+        snav_defaults = {a.dest: a.default for a in build_snav_parser()._actions}
+        assert snav_defaults.get("frame_width") == 384, (
+            f"eval_snav --frame-width default={snav_defaults.get('frame_width')} "
+            "but expected 384 (train-aligned)"
+        )
+        assert snav_defaults.get("frame_height") == 384, (
+            f"eval_snav --frame-height default={snav_defaults.get('frame_height')} "
+            "but expected 384 (train-aligned)"
+        )
+
+        stream_defaults = {a.dest: a.default for a in build_streamvln_parser()._actions}
+        assert stream_defaults.get("frame_width") == expected_resolution, (
+            f"eval_streamvln --frame-width default={stream_defaults.get('frame_width')} "
+            f"but expected {expected_resolution}"
+        )
+        assert stream_defaults.get("frame_height") == expected_resolution, (
+            f"eval_streamvln --frame-height default={stream_defaults.get('frame_height')} "
+            f"but expected {expected_resolution}"
+        )
 
     return _check
 
@@ -265,6 +276,11 @@ def check_action_extraction() -> None:
     assert extract_actions("forward forward stop", max_actions=5) == [
         "move_forward",
         "move_forward",
+        "stop",
+    ]
+    assert extract_actions("Final Answer: ↑→STOP", max_actions=5) == [
+        "move_forward",
+        "turn_right",
         "stop",
     ]
     assert extract_actions("no actions here") == []
@@ -397,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
     tester.run("scene_id values are parseable for resolver", check_scene_id_reachable)
     tester.run("LLM profiles share the expected resolution",
                check_profiles_consistency(args.expected_resolution))
-    tester.run("local-model CLIs use the expected resolution",
+    tester.run("local-model CLIs use expected resolutions (SNav 384 / StreamVLN 224)",
                check_entry_resolution_defaults(args.expected_resolution))
     tester.run("action extraction parses known verbs", check_action_extraction)
     tester.run("image pipeline end-to-end (resize + base64 + video sampling)",

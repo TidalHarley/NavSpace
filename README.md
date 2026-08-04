@@ -24,13 +24,16 @@ benchmarks mainly focus on semantic understanding but overlook a systematic eval
 and **1,228 trajectory-instruction pairs**, and evaluates multimodal large language models,
 local navigation models, and the proposed SNav baseline on the same benchmark.
 
-This repository contains everything you need to reproduce, extend, and build on top of the
-paper:
+This repository contains:
 
-- 📊 **Benchmark data** — all six NavSpace subtasks.
+- 📊 **Benchmark data** — all six NavSpace subtasks (`NavSpace-Datasets/`).
 - 🧪 **Evaluation suite** — LLM API / SNav / StreamVLN routes with a unified result format.
-- ✏️ **Annotation pipeline** — Flask + Habitat-Sim web UI for collecting new trajectories, see [docs/annotation.md](docs/annotation.md).
-- 🎓 **SNav training code (Stage-1 vanilla baseline)** — runnable end-to-end from Habitat rendering to DeepSpeed SFT, see [docs/training.md](docs/training.md). This is a *baseline* release: Video-QA mixing, height / lighting perturbation and full data-augmentation flows are out of scope and left for users to layer on top.
+- ✏️ **Annotation pipeline** — Flask + Habitat-Sim web UI for collecting new trajectories.
+- 🎓 **SNav training** — paper training chain under [`snav_training/`](snav_training/)
+  (Stage A VLN-mix → Stage B aug_mix+manual98), plus Habitat renderers and a baseline
+  Stage-1 trainer. Data-augmentation scripts live in [`data_augmentation/`](data_augmentation/).
+  **Training / render data and pretrained SNav weights are not shipped** — download scenes,
+  VLN-CE / LLaVA assets yourself; weights will be released separately (e.g. Hugging Face).
 
 ### Qualitative visualizations
 
@@ -42,15 +45,25 @@ movement, viewpoint shifting, vertical perception, spatial relationship).
 
 ### SNav fine-tuning pipeline
 
-![SNav Stage-1 fine-tuning pipeline](snav-finetune.png)
+![SNav fine-tuning pipeline](snav-finetune.png)
 
-Our SNav baseline is fine-tuned on top of Llava-Video-7b-Qwen2. The Stage-1 vanilla SFT recipe (Habitat rendering →  
-LLaVA-Video-7B-Qwen2 SFT via DeepSpeed) is open-sourced under  
-[snav_training/](snav_training/) — see the
-[training guide](docs/training.md). For the full paper recipe you additionally
-need Video-QA mixing (hook already exposed), height / lighting variation during
-rendering, and the Stage-2/3 data-augmentation pipelines, which are deliberately
-out of scope here; the baseline is meant to be extended.
+SNav is fine-tuned from **LLaVA-Video-7B-Qwen2** (+ SigLIP) in two CorrectNav-style SFT stages:
+
+1. **Stage A — VLN-mix** — collect/build under `snav_training/stage_a/`
+   (`prepare_stage_a_data.sh`), then `launch_vln_mix_stage_a.sh`
+   (nav-only YAML by default; full paper mix + LLaVA-OE optional).
+2. **Stage B — paper final** (`launch_paper_sft_stage_b.sh`): `aug_mix` + `manual_98`
+   (hist=8, future=6).
+
+Launch commands and layout: [`snav_training/README.md`](snav_training/README.md).  
+Augmentation pipelines that produce Stage-B images: [`data_augmentation/`](data_augmentation/).
+
+> **Note on data.** Training / render frames and JSONs are **not** shipped. Stage A:
+> download MP3D + R2R-CE + RxR-CE, then
+> `bash snav_training/scripts/prepare_stage_a_data.sh`. Stage B:
+> `data_augmentation/` → `snav_data/aug_mix` (+ optional `manual_98`), then
+> `snav_training/scripts/build_hist8_future6.py`. LLaVA-Video OE JSONs (paper full
+> Stage A) remain optional external assets.
 
 ---
 
@@ -61,7 +74,8 @@ out of scope here; the baseline is meant to be extended.
 | -------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | 🧪 Evaluation (LLM + SNav + StreamVLN)       | [evaluation/](evaluation/)                      | [中文文档](docs/evaluation.md) · [English](docs/evaluation_en.md)                                           |
 | ✏️ Annotation pipeline (Flask + Habitat-Sim) | [annotation_pipeline/](annotation_pipeline/) | [docs/annotation.md](docs/annotation.md) *(中英双语: CN&EN Bilingual)*                                      |
-| 🎓 SNav training (Stage-1 vanilla baseline)  | [snav_training/](snav_training/)              | [docs/training.md](docs/training.md) *(中英双语: CN&EN Bilingual)*                                        |
+| 🎓 SNav training (paper + baseline)          | [snav_training/](snav_training/)              | [snav_training/README.md](snav_training/README.md) · [docs/training.md](docs/training.md) *(legacy baseline notes)* |
+| 🧩 Data augmentation (Stage B images)        | [data_augmentation/](data_augmentation/)      | [data_augmentation/README.md](data_augmentation/README.md)                                               |
 | 📦 Benchmark data                            | [NavSpace-Datasets/](NavSpace-Datasets/)       | built into [docs/evaluation.md](docs/evaluation.md)                                                      |
 | 🧰 Utilities                                 | [tools/](tools/)                              | built into [docs/evaluation.md](docs/evaluation.md) §0, §6                                                |
 
@@ -71,27 +85,28 @@ Jump straight to a module:
 - **[Evaluation Guide (中文)](docs/evaluation.md)** — deploy Habitat-Sim / HM3D, run LLM / SNav / StreamVLN, merge shard results.
 - **[Evaluation Guide (English)](docs/evaluation_en.md)** — complete English translation of the above.
 - **[Annotation Pipeline Guide](docs/annotation.md)** — deploy the web UI, the 200-step familiarization gate, output JSON format.
-- **[SNav Training Guide](docs/training.md)** — render expert trajectories, run Stage-1 vanilla SFT with DeepSpeed, and hand off the checkpoint to the evaluation suite.
+- **[SNav Training (paper chain)](snav_training/README.md)** — Stage A / Stage B launchers, hist8 JSON builder, render entrypoints.
 
 ---
 
 ## 📂 Repository layout
 
 ```text
-NavSpace-main/
+NavSpace/
 ├── frontpage.png               # README hero figure
 ├── visualization.png           # qualitative rollouts figure
 ├── snav-finetune.png           # SNav pipeline figure
 ├── NavSpace-Datasets/          # benchmark data for the 6 subtasks
 ├── evaluation/                 # unified evaluation suite (LLM / SNav / StreamVLN)
 ├── annotation_pipeline/        # Flask + Habitat-Sim web UI for annotation
-├── snav_training/              # SNav Stage-1 vanilla SFT (render + train + pipeline)
+├── snav_training/              # paper SFT (snav_llava) + render + baseline Stage-1
+├── data_augmentation/          # Stage-B aug pipelines (no data shipped)
 ├── tools/                      # smoke_test / merge_results / llm_client / ...
 ├── docs/
 │   ├── evaluation.md           # 中文评测指南
 │   ├── evaluation_en.md        # English evaluation guide
 │   ├── annotation.md           # Bilingual Annotation pipeline guide
-│   └── training.md             # Bilingual Training Setup guide
+│   └── training.md             # older Stage-1 baseline notes (see snav_training/README.md)
 ├── gpt_eval.py                 # legacy wrapper -> evaluation/run_llm_eval
 ├── run_annotation_server.sh    # cd to repo root + start Flask annotation UI
 ├── el.sh                       # 8-way shard launcher
@@ -137,7 +152,7 @@ Each subfolder under `NavSpace-Datasets/` ships three JSON flavours:
 
 ```bash
 # 1. Clone / download and enter the repo
-cd NavSpace-main
+cd NavSpace
 
 # 2. (Optional) offline sanity check — no Habitat-Sim / HM3D / API key needed
 python tools/smoke_test.py
@@ -153,8 +168,19 @@ python evaluation/run_llm_eval.py \
   --hm3d-base-path /path/to/hm3d_v0.2
 ```
 
-For everything else — provider selection, API keys, SNav / StreamVLN setup, parallel sharding,
-result merging and offline verification — open the **[Evaluation Guide](docs/evaluation.md)**.
+For SNav local-model eval (after you have a checkpoint + SigLIP + HM3D):
+
+```bash
+python evaluation/eval_snav.py \
+  --model-path /path/to/SNav-7B \
+  --vision-tower-path /path/to/siglip-so400m-patch14-384 \
+  --hm3d-base-path /path/to/hm3d_v0.2 \
+  --task environment_state
+```
+
+For everything else — provider selection, API keys, StreamVLN setup, parallel sharding,
+result merging and offline verification — open the **[Evaluation Guide](docs/evaluation.md)**.  
+For training: **[snav_training/README.md](snav_training/README.md)**.
 
 ---
 
@@ -166,22 +192,27 @@ Dependency files are split by usage so you only install what you need:
 - `requirements-llm.txt` — LLM API clients (OpenAI-compatible + Zhipu).
 - `requirements-local-model.txt` — local-model route (torch / transformers / decord / ...).
 - `requirements-annotation.txt` — Flask + Flask-SocketIO web UI for the annotation pipeline.
+- `snav_training/requirements_paper.txt` — **reference freeze** from an internal training host
+  (includes private pins). Prefer installing `deepspeed`, `accelerate`, `transformers`, and
+  optionally `flash-attn` into a CUDA-matched env; see [`snav_training/README.md`](snav_training/README.md).
 
-`habitat-sim` / `habitat-lab` and the HM3D / MP3D assets still have to be installed separately
-per your platform and CUDA version — see [§1 of the Evaluation Guide](docs/evaluation.md#1-部署指南三类评测通用).
+`habitat-sim` / `habitat-lab` and the HM3D / MP3D / R2R-CE / RxR-CE assets still have to be
+installed separately per your platform and CUDA version — see
+[§1 of the Evaluation Guide](docs/evaluation.md#1-部署指南三类评测通用) and the training README.
 
 ---
 
 ## 🗺️ Roadmap
 
-- Public benchmark data for all six subtasks.
-- Unified evaluation suite (LLM / SNav / StreamVLN).
-- Annotation pipeline with a 200-step familiarization gate.
-- Offline verification (`tools/smoke_test.py`, `--dry-run`).
-- SNav Stage-1 vanilla SFT baseline (`snav_training/`).
-- Height / lighting variation during rendering.
-- Data-augmentation scripts (LLM-based instruction rewriting, panorama aug, DAgger).
-- Pretrained SNav checkpoints.
+- [x] Public benchmark data for all six subtasks.
+- [x] Unified evaluation suite (LLM / SNav / StreamVLN).
+- [x] Annotation pipeline with a 200-step familiarization gate.
+- [x] Offline verification (`tools/smoke_test.py`, `--dry-run`).
+- [x] SNav paper training entrypoints (`snav_training/`: Stage A/B launchers + `snav_llava`).
+- [x] Stage A VLN-mix **nav data builders** (`snav_training/stage_a/` + `prepare_stage_a_data.sh`).
+- [x] Data-augmentation scripts (`data_augmentation/`).
+- [ ] LLaVA-Video OE JSON packaging for the optional full Stage-A mix (external asset).
+- [ ] Pretrained SNav checkpoints (Hugging Face release).
 
 ---
 
