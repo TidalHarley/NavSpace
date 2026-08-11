@@ -6,6 +6,7 @@
 
 - **ArXiv (paper):** [NavSpace — How Navigation Agents Follow Spatial Intelligence Instructions](https://arxiv.org/abs/2510.08173)
 - **Project website:** [https://navspace.github.io/](https://navspace.github.io/)
+- **SNav-7b model weights:** [https://huggingface.co/TidalYang/SNav-7B]
 
 ## Highlights
 
