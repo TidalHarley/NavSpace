@@ -13,6 +13,7 @@
 - We manually collect 6 task categories and 1,228 trajectory-instruction pairs
 - We comprehensively evaluate 22 navigation agents
 - We propose a strong baseline model, **SNav**, validated on both NavSpace and real robot tests. **SNav** achieves **SoTA** in all validations.
+- All codes, including the two-stage training recipes and SoTA model SNav are opensourced.
 
 ---
 
