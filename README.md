@@ -34,8 +34,12 @@ This repository contains:
 - 🎓 **SNav training** — paper training chain under [`snav_training/`](snav_training/)
   (Stage A VLN-mix → Stage B aug_mix+manual98), plus Habitat renderers and a baseline
   Stage-1 trainer. Data-augmentation scripts live in [`data_augmentation/`](data_augmentation/).
-  **Training / render data and pretrained SNav weights are not shipped** — download scenes,
-  VLN-CE / LLaVA assets yourself; weights will be released separately (e.g. Hugging Face).
+- 🧾 **Stage-B episode release** — [`snav_training/stage_b/stage_b_episodes.json`](snav_training/stage_b/)
+  lists all 1,676 Stage-B episodes in R2R-CE format with baked-in geometry and the
+  final trained instructions, so you can re-render the exact 80,210-row training
+  set from your own MP3D copy. **Rendered frames are not shipped** (they are MP3D
+  derivatives); scenes, VLN-CE / LLaVA assets and SNav weights are downloaded
+  separately.
 
 ### Qualitative visualizations
 
@@ -60,11 +64,30 @@ SNav is fine-tuned from **LLaVA-Video-7B-Qwen2** (+ SigLIP) in two CorrectNav-st
 Launch commands and layout: [`snav_training/README.md`](snav_training/README.md).  
 Augmentation pipelines that produce Stage-B images: [`data_augmentation/`](data_augmentation/).
 
-> **Note on data.** Training / render frames and JSONs are **not** shipped. Stage A:
-> download MP3D + R2R-CE + RxR-CE, then
-> `bash snav_training/scripts/prepare_stage_a_data.sh`. Stage B:
-> `data_augmentation/` → `snav_data/aug_mix` (+ optional `manual_98`), then
-> `snav_training/scripts/build_hist8_future6.py`. LLaVA-Video OE JSONs (paper full
+> **Note on data.** Rendered frames are **not** shipped, because every Stage-B
+> frame is an MP3D derivative and Matterport3D's Terms of Use are signed per
+> user. What *is* shipped is enough to regenerate them.
+>
+> **Stage A** — download MP3D + R2R-CE + RxR-CE, then
+> `bash snav_training/scripts/prepare_stage_a_data.sh`.
+>
+> **Stage B** — re-render the released episode list, then build the training JSON:
+>
+> ```bash
+> python snav_training/scripts/render_stage_b.py \
+>   --episodes snav_training/stage_b/stage_b_episodes.json \
+>   --scenes-root /path/to/mp3d --out-root snav_data
+> python snav_training/scripts/build_hist8_future6.py \
+>   --aug-root snav_data/aug_mix --manual-root snav_data/manual_98 \
+>   --out-dir train_data
+> ```
+>
+> This reproduces the paper's 80,210 training rows; frames and action labels are
+> byte-identical to ours for the `follower` and `replay` splits. Details and the
+> one exception (`precise_movement`, a fresh seeded draw) are in
+> [`snav_training/stage_b/README.md`](snav_training/stage_b/README.md). To build a
+> *new* augmented set rather than reproduce ours, use
+> [`data_augmentation/`](data_augmentation/). LLaVA-Video OE JSONs (paper full
 > Stage A) remain optional external assets.
 
 ---
@@ -102,7 +125,8 @@ NavSpace/
 ├── evaluation/                 # unified evaluation suite (LLM / SNav / StreamVLN)
 ├── annotation_pipeline/        # Flask + Habitat-Sim web UI for annotation
 ├── snav_training/              # paper SFT (snav_llava) + render + baseline Stage-1
-├── data_augmentation/          # Stage-B aug pipelines (no data shipped)
+│   └── stage_b/                # Stage-B episode release (R2R-CE JSON, re-renderable)
+├── data_augmentation/          # Stage-B aug pipelines (build a new set)
 ├── tools/                      # smoke_test / merge_results / llm_client / ...
 ├── docs/
 │   ├── evaluation.md           # 中文评测指南
@@ -213,8 +237,10 @@ installed separately per your platform and CUDA version — see
 - [x] SNav paper training entrypoints (`snav_training/`: Stage A/B launchers + `snav_llava`).
 - [x] Stage A VLN-mix **nav data builders** (`snav_training/stage_a/` + `prepare_stage_a_data.sh`).
 - [x] Data-augmentation scripts (`data_augmentation/`).
+- [x] Stage-B episode release + one-command re-render (`snav_training/stage_b/`,
+      `render_stage_b.py`) — reproduces the paper's 80,210 training rows.
 - [ ] LLaVA-Video OE JSON packaging for the optional full Stage-A mix (external asset).
-- [ ] Pretrained SNav checkpoints (Hugging Face release).
+- [x] Pretrained SNav checkpoints ([Hugging Face](https://huggingface.co/TidalYang/SNav-7B)).
 
 ---
 

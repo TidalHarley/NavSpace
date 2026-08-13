@@ -93,8 +93,21 @@ bash snav_training/scripts/launch_vln_mix_stage_a.sh
 # MID_RUN_NAME=r2r_rxr_llava_mix_stopdup bash snav_training/scripts/launch_vln_mix_stage_a.sh
 ```
 
-**3. Stage-B images** via [`../data_augmentation/`](../data_augmentation/) → `snav_data/aug_mix`
-(and optional `snav_data/manual_98`).
+**3. Stage-B images.** Recommended: re-render the released episode list, which
+reproduces the exact data SNav-7B trained on without any LLM API calls.
+
+```bash
+python snav_training/scripts/render_stage_b.py \
+  --episodes snav_training/stage_b/stage_b_episodes.json \
+  --scenes-root /path/to/mp3d \
+  --out-root snav_data
+```
+
+This writes `snav_data/aug_mix/{task}/` and `snav_data/manual_98/`. See
+[`stage_b/README.md`](stage_b/README.md) for the schema, the per-task episode
+counts, and how to verify your re-render. To build a *new* augmented set instead
+of reproducing ours, use the pipelines in
+[`../data_augmentation/`](../data_augmentation/).
 
 **4. Build Stage-B JSON + train:**
 
@@ -114,6 +127,12 @@ export PREV_STAGE_CHECKPOINT=$TRAIN_DATA_ROOT/work_dirs/r2r_rxr_llava_mix_nav_on
 export IMAGE_FOLDER=$PWD/snav_data/aug_mix
 bash snav_training/scripts/launch_paper_sft_stage_b.sh
 ```
+
+Reproducing the full release, `build_hist8_future6.py` should report
+`merged 80210 = aug 74244 + manual 5966` — the exact row count of the paper run
+(2,506 steps × effective batch 32, minus 18 dropped by `dataloader_drop_last`).
+`precise_movement` is the one split that is a fresh draw rather than a replay;
+see [`stage_b/README.md`](stage_b/README.md).
 
 **5. Eval** with [`../evaluation/eval_snav.py`](../evaluation/eval_snav.py)
 (defaults: 384×384, max-frames 16, HFOV 120; pass `--vision-tower-path`).
