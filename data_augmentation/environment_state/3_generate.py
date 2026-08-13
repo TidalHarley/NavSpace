@@ -151,6 +151,13 @@ TEMPLATE_TAG_NEG = ("D_if_stay", "E_from_here")
 
 def _choose_template(rng: random.Random, weights: dict[str, float]) -> str:
     keys = list(weights.keys())
+    unknown = [k for k in keys if k not in TEMPLATE_TAG_POS + TEMPLATE_TAG_NEG]
+    if unknown:
+        # A key that no _build_* handles would silently fall through to
+        # template E, skewing the whole instruction mix without any error.
+        raise SystemExit(
+            f"config environment_state.template_weights has unknown templates: "
+            f"{unknown}. Supported: {list(TEMPLATE_TAG_POS + TEMPLATE_TAG_NEG)}")
     vals = [float(weights[k]) for k in keys]
     return rng.choices(keys, weights=vals, k=1)[0]
 

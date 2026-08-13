@@ -101,10 +101,24 @@ $PYTHON data_augmentation/environment_state/2_analyze.py \
 echo ">>> [5/6] 3_generate.py (wrap into A/B/D/E conditionals)"
 $PYTHON data_augmentation/environment_state/3_generate.py
 
-echo ">>> [6/6] convert_aug_to_sft.py (patch instructions + frames layout)"
+echo ">>> [6/7] convert_aug_to_sft.py (patch instructions + frames layout)"
 $PYTHON data_augmentation/scripts/convert_aug_to_sft.py \
   --folder "$OUTPUT_DIR" \
   --instructions-source "$CUSTOM_INSTR"
+
+# Every template ships the walk-to-goal trajectory, so without this step the
+# split contains no (instruction, STOP) pair and the model never learns to
+# honour the IF clause. The paper split is 909 annotations = 500 base + 409
+# balanced siblings; skipping this leaves you at 500.
+echo ">>> [7/7] 4_balance_stay.py (paired STOP siblings)"
+if [[ "${SKIP_BALANCE_STAY:-0}" == "1" ]]; then
+  echo "    skipped (SKIP_BALANCE_STAY=1)"
+else
+  $PYTHON data_augmentation/environment_state/4_balance_stay.py \
+    --annotations "$OUTPUT_DIR/annotations.json" \
+    --review "$ES_OUT/review.json" \
+    --target-stay-ratio "${TARGET_STAY_RATIO:-0.45}"
+fi
 
 echo "----------------------------------------------"
 echo "Done. SFT-ready data at: $OUTPUT_DIR"

@@ -63,7 +63,7 @@ fi
 # ── 2. Environment State (R2R + first/last frame Qwen-VL + templates A-E) ──
 if [[ "$SKIP_ENVSTATE" != "1" ]]; then
   echo ">>> [2/4] environment_state"
-  $PYTHON data_augmentation/environment_state/1_sample.py
+  $PYTHON data_augmentation/environment_state/1_filter.py
   $PYTHON data_augmentation/environment_state/2_analyze.py
   $PYTHON data_augmentation/environment_state/3_generate.py
 fi

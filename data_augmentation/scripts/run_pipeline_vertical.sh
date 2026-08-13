@@ -18,7 +18,7 @@
 #     MAX_EPISODES=400            target verified episode count
 #     STAIRS_CHECK=0              1 → also gate by Qwen-VL stair detection
 #     RESTART=0                   1 → re-run from scratch (drops checkpoint)
-#     OUTPUT_DIR=snav_data/aug_mix/r2r_rewritten
+#     OUTPUT_DIR=snav_data/aug_mix/vertical_perception
 #     DATASET_TAG=aug_vert
 #     VIDEO_SUBDIR=aug_vert
 #     RENDER_MAX_EPISODES=0       (0 = render everything in the passthrough)
@@ -36,7 +36,7 @@ PYTHON="${PYTHON:-python}"
 MAX_EPISODES="${MAX_EPISODES:-400}"
 STAIRS_CHECK="${STAIRS_CHECK:-0}"
 RESTART="${RESTART:-0}"
-OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/snav_data/aug_mix/r2r_rewritten}"
+OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/snav_data/aug_mix/vertical_perception}"
 DATASET_TAG="${DATASET_TAG:-aug_vert}"
 VIDEO_SUBDIR="${VIDEO_SUBDIR:-aug_vert}"
 OUTPUT_MODE="${OUTPUT_MODE:-snav_frames}"
@@ -112,7 +112,7 @@ $PYTHON "$RENDER_PY" \
   --gpu_device_id "$GPU_DEVICE_ID"
 
 # ── 5. Qwen rewrite + patch the rendered LLaVA annotations. ──
-echo ">>> [5/5] 3_rewrite.py (Qwen) + patch_llava_instructions.py"
+echo ">>> [5/6] 3_rewrite.py (Qwen) + patch_llava_instructions.py"
 $PYTHON data_augmentation/vertical_perception/3_rewrite.py
 
 LLAVA_PATH="${OUTPUT_DIR}/llava_annotations.json"
@@ -125,6 +125,14 @@ else
   echo "WARN: $LLAVA_PATH not found — skip patch step."
 fi
 
-echo "Done."
-echo "  frames + LLaVA : $OUTPUT_DIR"
+# ── 6. Convert to the Stage-B layout. ──
+# snav_frames leaves flat {ep_tag}/NNN.jpg + llava_annotations.json, which
+# build_hist8_future6.py cannot read — it needs {ep_tag}/rgb/NNN.jpg plus a
+# root annotations.json. Without this step the split is silently unusable.
+echo ">>> [6/6] convert_aug_to_sft.py (frames layout + annotations.json)"
+$PYTHON data_augmentation/scripts/convert_aug_to_sft.py \
+  --folder "$OUTPUT_DIR" \
+  --instructions-source "$CUSTOM_INSTR"
+
+echo "Done. SFT-ready data at: $OUTPUT_DIR"
 echo "  custom_instr   : $CUSTOM_INSTR"

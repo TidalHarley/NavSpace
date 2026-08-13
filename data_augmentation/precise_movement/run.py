@@ -20,6 +20,7 @@ import json
 import random
 import shutil
 import sys
+import zlib
 from pathlib import Path
 
 import cv2
@@ -282,6 +283,15 @@ def run_precise_movement(args: argparse.Namespace) -> int:
             continue
 
         scan = Path(scene_id).parent.name or scene_id.split("/")[0]
+
+        # get_random_navigable_point() draws from habitat-sim's own RNG, which
+        # args.seed does not reach. Seed the pathfinder per scene so the sampled
+        # (start, goal) pairs — and therefore the whole episode set — are
+        # reproducible. Derived from the scan name so scene ordering does not
+        # shift the draw.
+        sim.pathfinder.seed(
+            (args.seed + zlib.crc32(scan.encode("utf-8"))) % (2**31 - 1))
+
         success_for_scene = 0
         attempts = max(per_scene * 15, 30)
 
@@ -433,7 +443,10 @@ def main() -> int:
                         help="Drop trajectories shorter than this (default: config precise_movement.min_steps).")
     parser.add_argument("--max-steps", type=int, default=None,
                         help="Drop trajectories longer than this (default: config precise_movement.max_steps).")
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Seeds both the scene shuffle and habitat-sim's "
+                             "navigable-point sampler, so a given seed always "
+                             "yields the same episode set.")
     parser.add_argument("--restart", action="store_true",
                         help="Delete existing output and start fresh.")
     args = parser.parse_args()

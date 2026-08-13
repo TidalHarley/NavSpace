@@ -36,11 +36,10 @@ environment_state:
   max_geodesic: 25.0
   max_episodes: 300
   template_weights:
-    D_imperative_if: 0.40
-    C_pure_if: 0.15
-    B_from_if: 0.15
-    A_starting_if: 0.15
-    E_negative: 0.15
+    A_starting_if: 0.35
+    B_if_then: 0.35
+    D_if_stay: 0.15
+    E_from_here: 0.15
 
 vertical_perception:
   min_height_diff: 1.5
