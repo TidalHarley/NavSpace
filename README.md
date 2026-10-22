@@ -8,6 +8,24 @@
 - **Project website:** [https://navspace.github.io/](https://navspace.github.io/)
 - **SNav-7b model weights:** [https://huggingface.co/TidalYang/SNav-7B]
 
+## 📰 News
+**[2026-10-22]** GPT-6.1-sol (`high`) achieves **30.83% / 35.27%** macro SR on all **1,228 NavSpace episodes** under the two camera settings below.
+
+| **224×224 · HFOV 120°** | **SR (%) ↑** | **NE (m) ↓** | **OS (%) ↑** | **768×448 · HFOV 150°** | **SR (%) ↑** | **NE (m) ↓** | **OS (%) ↑** |
+|:---|---:|---:|---:|:---|---:|---:|---:|
+| Environment State | 36.50 | 3.489 | 44.50 | Environment State | **44.00** | **3.050** | **51.00** |
+| Space Structure | 20.00 | 3.816 | 36.50 | Space Structure | **21.50** | **3.436** | **39.00** |
+| Precise Movement | **43.78** | **2.929** | **48.76** | Precise Movement | 42.79 | 2.991 | 47.76 |
+| Viewpoint Shifting | 32.37 | 4.275 | 33.82 | Viewpoint Shifting | **38.16** | **4.118** | **40.10** |
+| Vertical Perception | 24.04 | 5.651 | 28.37 | Vertical Perception | **30.29** | **4.994** | **35.10** |
+| Spatial Relationship | 28.30 | 4.751 | 28.30 | Spatial Relationship | **34.91** | **4.415** | **35.38** |
+| **Macro Average** | 30.83 | 4.152 | 36.71 | **Macro Average** | **35.27** | **3.834** | **41.39** |
+
+**Shared settings:** `reasoning.effort=high`, `max_steps=500`, up to 64 history frames, and we use the the original prompt that opensourced in repo. <br>
+**Budget audit:** No episode in either run reached the 500-action limit, and no output-token truncation was observed in the saved final-attempt API responses. <br>
+**Findings:** It turns out that frontier MLLMs like GPT-6.1-sol have remarkable instruction-following abilities, so they perform well on Precise Movement category, but they still lack abilities in terms of Spatial Intelligence.
+
+
 ## Highlights
 
 - NavSpace is the **first benchmark** for evaluating spatial intelligence in embodied navigation
