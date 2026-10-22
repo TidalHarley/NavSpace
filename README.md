@@ -59,6 +59,10 @@ This repository contains:
   derivatives); scenes, VLN-CE / LLaVA assets and SNav weights are downloaded
   separately.
 
+### Quantitively Results on NavSpace Benchmark
+
+![Qualitative rollouts on the six NavSpace subtasks](visualizations.png)
+
 ### Qualitative visualizations
 
 The figure below shows typical agent rollouts on the six NavSpace subtasks — each column
